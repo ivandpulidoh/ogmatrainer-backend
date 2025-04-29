@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "vKc0Ns5lK2oYzZX0AgqfzmNldtK1z/A37ubAaKWBCfU=",
+  "Source": "GymManagementService",
+  "BasePath": "_content/GymManagementService",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}
