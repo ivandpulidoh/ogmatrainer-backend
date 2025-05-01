@@ -4,10 +4,46 @@ using BookingManagementService.HostedServices; // We'll create this later
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
 
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.Authorization;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Add Configuration
 var configuration = builder.Configuration;
+var jwtKey = configuration["Jwt:Key"];
+var jwtIssuer = configuration["Jwt:Issuer"];
+var jwtAudience = configuration["Jwt:Audience"];
+
+if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer) || string.IsNullOrEmpty(jwtAudience)) {
+     throw new InvalidOperationException("JWT settings (Key, Issuer, Audience) must be configured in appsettings.");
+}
+
+// 2. Authentication
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true, // Ensure token isn't expired
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
+
+// 3. Authorization (needed to use [Authorize] attributes)
+builder.Services.AddAuthorization();
+
 
 // 2. Add services to the container.
 builder.Services.AddControllers();

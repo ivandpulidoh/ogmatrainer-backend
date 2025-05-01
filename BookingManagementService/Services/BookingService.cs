@@ -10,11 +10,16 @@ public class BookingService : IBookingService
 {
     private readonly BookingDbContext _context;
     private readonly ILogger<BookingService> _logger;
+    private readonly INotificationService _notificationService;
 
-    public BookingService(BookingDbContext context, ILogger<BookingService> logger)
+    public BookingService(
+        BookingDbContext context, 
+        ILogger<BookingService> logger, 
+        INotificationService notificationService)
     {
         _context = context;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
     public async Task<(bool Success, int? ReservationId, string? ErrorMessage)> CreateMachineReservationAsync(CreateMachineReservationRequest request)
@@ -69,6 +74,20 @@ public class BookingService : IBookingService
             _context.ReservasMaquinas.Add(reservation);
             await _context.SaveChangesAsync();
             _logger.LogInformation("Machine reservation {ReservationId} created for user {UserId}", reservation.IdReservaMaquina, reservation.IdUsuario);
+            
+            try {
+                var notification = new NotificationRequest
+                {
+                    IdUsuario = reservation.IdUsuario,
+                    Tipo = "ReservacionCreada",
+                    Nombre = "Reservación de Máquina Confirmada",
+                    Descripcion = $"Tu reservación para la máquina '{machine.Nombre}' el {reservation.FechaHoraInicio.ToLocalTime():D} a las {reservation.FechaHoraInicio.ToLocalTime():t} ha sido creada."
+                };
+                await _notificationService.SendNotificationAsync(notification);
+                }
+            catch (Exception ex) {
+                _logger.LogError(ex, "Failed to send confirmation notification for machine reservation {ReservationId}", reservation.IdReservaMaquina);
+            }
             return (true, reservation.IdReservaMaquina, null);
         }
         catch (DbUpdateException ex)
@@ -76,6 +95,8 @@ public class BookingService : IBookingService
             _logger.LogError(ex, "Failed to create machine reservation for user {UserId}", request.IdUsuario);
             return (false, null, "Failed to save reservation. Please try again.");
         }
+
+        
     }
 
     public async Task<(bool Success, int? ReservationId, string? ErrorMessage)> CreateTrainerReservationAsync(CreateTrainerReservationRequest request)
@@ -201,6 +222,173 @@ public class BookingService : IBookingService
         }
     }
 
+    public async Task<CancellationResult> CancelMachineReservationAsync(int reservationId, int requestingUserId)
+    {
+        _logger.LogInformation("Attempting to cancel machine reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
+
+        var reservation = await _context.ReservasMaquinas
+                                        // .Include(r => r.Usuario) // Optional: Include if needed for complex rules
+                                        .FirstOrDefaultAsync(r => r.IdReservaMaquina == reservationId);
+
+        if (reservation == null)
+        {
+            _logger.LogWarning("Machine reservation {ReservationId} not found for cancellation attempt by user {UserId}", reservationId, requestingUserId);
+            return CancellationResult.NotFound;
+        }
+
+        if (reservation.Estado == "Cancelada")
+        {
+            _logger.LogInformation("Machine reservation {ReservationId} is already cancelled.", reservationId);
+            return CancellationResult.Success;
+        }
+
+        if (reservation.Estado == "Completada" || reservation.Estado == "NoShow")
+        {
+            _logger.LogWarning("Cannot cancel machine reservation {ReservationId} because its status is {Status}", reservationId, reservation.Estado);
+            return CancellationResult.Conflict; // Cannot cancel a completed or missed reservation
+        }
+
+        reservation.Estado = "Cancelada";
+        reservation.Asistio = null; // Reset attendance status if applicable
+
+        var machine = await _context.MaquinasEjercicio
+                            .AsNoTracking() // Keep if you don't need to track changes to this entity
+                            .FirstOrDefaultAsync(m => m.IdMaquina == reservation.IdMaquina);
+
+        try
+        {
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Successfully cancelled machine reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
+
+            try {
+                var notification = new NotificationRequest
+                {
+                    IdUsuario = reservation.IdUsuario,
+                    Tipo = "ReservacionCancelada",
+                    Nombre = "Reservación de Máquina Cancelada",
+                    Descripcion = $"Tu reservación para la máquina '{machine?.Nombre}' el {reservation.FechaHoraInicio.ToLocalTime():D} a las {reservation.FechaHoraInicio.ToLocalTime():t} ha sido cancelada"
+                };
+                await _notificationService.SendNotificationAsync(notification);
+                }
+            catch (Exception ex) {
+                _logger.LogError(ex, "Failed to send confirmation notification for machine reservation {ReservationId}", reservation.IdReservaMaquina);
+            }
+
+            return CancellationResult.Success;
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+             _logger.LogError(ex, "Concurrency error cancelling machine reservation {ReservationId}", reservationId);
+            return CancellationResult.Conflict;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving cancellation for machine reservation {ReservationId}", reservationId);
+            return CancellationResult.Conflict;
+        }
+    }
+
+    public async Task<CancellationResult> CancelTrainerReservationAsync(int reservationId, int requestingUserId, bool isAdmin)
+    {
+         _logger.LogInformation("Attempting to cancel trainer reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
+
+        var reservation = await _context.ReservasEntrenador
+                                    .FirstOrDefaultAsync(r => r.IdReservaEntrenador == reservationId);
+
+         if (reservation == null)
+        {
+            _logger.LogWarning("Trainer reservation {ReservationId} not found for cancellation attempt by user {UserId}", reservationId, requestingUserId);
+            return CancellationResult.NotFound;
+        }
+
+        if (reservation.IdCliente != requestingUserId && reservation.IdEntrenador != requestingUserId && !isAdmin)
+        {
+             _logger.LogWarning("User {UserId} forbidden to cancel trainer reservation {ReservationId} (Client: {ClientId}, Trainer: {TrainerId})",
+                requestingUserId, reservationId, reservation.IdCliente, reservation.IdEntrenador);
+             return CancellationResult.Forbidden;
+        }
+
+        // Business Rule Check:
+        if (reservation.Estado == "Cancelada")
+        {
+            _logger.LogInformation("Trainer reservation {ReservationId} is already cancelled.", reservationId);
+             return CancellationResult.Success;
+        }
+        if (reservation.Estado == "Completada" || reservation.Estado == "NoShowCliente" || reservation.Estado == "NoShowEntrenador")
+        {
+             _logger.LogWarning("Cannot cancel trainer reservation {ReservationId} because its status is {Status}", reservationId, reservation.Estado);
+            return CancellationResult.Conflict;
+        }
+
+         // Perform Cancellation
+        reservation.Estado = "Cancelada";
+        reservation.AsistioCliente = null;
+        reservation.AsistioEntrenador = null;
+
+        try
+        {
+            await _context.SaveChangesAsync();
+             _logger.LogInformation("Successfully cancelled trainer reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
+            return CancellationResult.Success;
+        }
+        catch (DbUpdateConcurrencyException ex) // Handle potential race conditions
+        {
+             _logger.LogError(ex, "Concurrency error cancelling trainer reservation {ReservationId}", reservationId);
+            return CancellationResult.Conflict;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving cancellation for trainer reservation {ReservationId}", reservationId);
+            return CancellationResult.Conflict;
+        }
+    }
+    
+    public async Task<CancellationResult> CancelClassRegistrationAsync(int registrationId, int requestingUserId, bool isAdmin)
+    {
+        _logger.LogInformation("Attempting to cancel class registration {RegistrationId} by user {UserId}", registrationId, requestingUserId);
+
+        var registration = await _context.InscripcionesClases
+                                        .Include(ic => ic.Clase) // Include Clase if time-based rules apply
+                                        .FirstOrDefaultAsync(ic => ic.IdInscripcion == registrationId);
+
+        if (registration == null)
+        {
+            _logger.LogWarning("Class registration {RegistrationId} not found for cancellation attempt by user {UserId}", registrationId, requestingUserId);
+            return CancellationResult.NotFound;
+        }
+
+        if (registration.IdUsuario != requestingUserId && !isAdmin)
+        {
+            _logger.LogWarning("User {UserId} forbidden to cancel class registration {RegistrationId} belonging to user {OwnerId}",
+                requestingUserId, registrationId, registration.IdUsuario);
+            return CancellationResult.Forbidden;
+        }
+
+        // Business Rule Check:
+        //preventing cancellation if class already started/finished
+        if (registration.Clase?.FechaHoraInicio <= DateTime.UtcNow) 
+        { 
+            return CancellationResult.Conflict;
+        }
+
+        try
+        {
+            _context.InscripcionesClases.Remove(registration);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Successfully cancelled (removed) class registration {RegistrationId} by user {UserId}", registrationId, requestingUserId);
+            return CancellationResult.Success;
+        }
+         catch (DbUpdateConcurrencyException ex)
+        {
+             _logger.LogError(ex, "Concurrency error cancelling class registration {RegistrationId}", registrationId);
+             return CancellationResult.NotFound; 
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving cancellation for class registration {RegistrationId}", registrationId);
+            return CancellationResult.Conflict;
+        }
+    }
     // --- Retrieval Methods ---
 
     public async Task<IEnumerable<BookingDto>> GetUserBookingsForDayAsync(int userId, DateOnly date)
@@ -386,4 +574,5 @@ public class BookingService : IBookingService
             _logger.LogWarning("Attempted to update attendance for non-existent class registration {RegistrationId}", registrationId);
         }
     }
+
 }

@@ -1,22 +1,44 @@
 using BookingManagementService.Models;
 using BookingManagementService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace BookingManagementService.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
+[Authorize]
 public class BookingsController : ControllerBase
 {
     private readonly IBookingService _bookingService;
-    private readonly ILogger<BookingsController> _logger; // Add logging
+    private readonly ILogger<BookingsController> _logger;
+    private const string AdminRole = "Administrador";
+    private const string GymAdminRole = "AdminGimnasio";
 
     public BookingsController(IBookingService bookingService, ILogger<BookingsController> logger)
     {
         _bookingService = bookingService;
         _logger = logger;
+    }
+
+    private int GetCurrentUserId()
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (int.TryParse(userIdClaim, out var userId))
+        {
+            return userId;
+        }
+        _logger.LogError("Could not find or parse User ID claim for authenticated user.");
+        throw new UnauthorizedAccessException("User ID claim is missing or invalid.");
+    }
+
+    private bool IsAdmin()
+    {
+        return User.IsInRole(AdminRole) || User.IsInRole(GymAdminRole);
     }
 
     // POST api/bookings/machines
@@ -144,5 +166,98 @@ public class BookingsController : ControllerBase
         return Ok(bookings);
     }
 
-     // Add other endpoints as needed (e.g., GET specific reservation, DELETE reservation)
+    // DELETE api/bookings/machines/{reservationId}
+    [HttpDelete("machines/{reservationId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)] // If GetCurrentUserId fails
+    public async Task<IActionResult> CancelMachineReservation(int reservationId)
+    {
+        int requestingUserId;
+        try
+        {
+            requestingUserId = GetCurrentUserId();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+
+        var result = await _bookingService.CancelMachineReservationAsync(reservationId, requestingUserId);
+
+        return MapCancellationResult(result); // Use helper for mapping
+    }
+
+
+    // DELETE api/bookings/trainers/{reservationId}
+    [HttpDelete("trainers/{reservationId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CancelTrainerReservation(int reservationId)
+    {
+        int requestingUserId;
+        try
+        {
+            requestingUserId = GetCurrentUserId();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+
+        var result = await _bookingService.CancelTrainerReservationAsync(reservationId, requestingUserId, IsAdmin());
+
+         return MapCancellationResult(result);
+    }
+
+
+    // DELETE api/bookings/classes/registrations/{registrationId}
+    [HttpDelete("classes/registrations/{registrationId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CancelClassRegistration(int registrationId)
+    {
+        int requestingUserId;
+        try
+        {
+            requestingUserId = GetCurrentUserId();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+
+        var result = await _bookingService.CancelClassRegistrationAsync(registrationId, requestingUserId, IsAdmin());
+
+         return MapCancellationResult(result);
+    }
+
+    // --- Helper to map CancellationResult enum to IActionResult ---
+    private IActionResult MapCancellationResult(CancellationResult result)
+    {
+        switch (result)
+        {
+            case CancellationResult.Success:
+                return NoContent(); // Standard for successful DELETE
+            case CancellationResult.NotFound:
+                return NotFound();
+            case CancellationResult.Forbidden:
+                return Forbid(); // Returns 403
+            case CancellationResult.Conflict:
+                 // Providing a message for Conflict is often helpful
+                return Conflict(new { message = "Cannot cancel the reservation/registration due to its current state or business rules." });
+            default:
+                 // Should not happen
+                 _logger.LogError("Unhandled CancellationResult: {Result}", result);
+                 return StatusCode(StatusCodes.Status500InternalServerError);
+        }
+    }
 }

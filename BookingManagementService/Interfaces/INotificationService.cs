@@ -1,8 +1,9 @@
 using BookingManagementService.Entities;
+using BookingManagementService.Models;
 
 namespace BookingManagementService.Services;
 
 public interface INotificationService
 {
-    Task SendMissedReservationNotificationAsync(Usuario user, ReservaMaquina reservation);
+    Task SendNotificationAsync(NotificationRequest notification);
 }

@@ -1,0 +1,320 @@
+ALTER TABLE dbo.Usuarios
+DROP CONSTRAINT UK_oauth;
+GO
+
+CREATE UNIQUE INDEX UQ_Usuarios_OAuth_Filtered
+ON dbo.Usuarios (oauth_provider, oauth_id)
+WHERE oauth_provider IS NOT NULL AND oauth_id IS NOT NULL;
+GO
+
+IF EXISTS (SELECT * FROM sys.key_constraints WHERE type = 'UQ' AND parent_object_id = OBJECT_ID('dbo.Usuarios') AND name = 'UK_oauth')
+BEGIN
+    ALTER TABLE dbo.Usuarios DROP CONSTRAINT UK_oauth;
+    PRINT 'Dropped existing constraint UK_oauth.';
+END
+GO
+
+
+
+PRINT 'Inserting into Gimnasios...';
+INSERT INTO Gimnasios (nombre, direccion, capacidad_maxima, activo, codigo_qr_entrada, codigo_qr_salida) VALUES
+('Alpha Fitness Central', '123 Main St, Downtown', 150, 1, CAST('QR_Entrada_Alpha' AS VARBINARY(MAX)), CAST('QR_Salida_Alpha' AS VARBINARY(MAX))),
+('Beta Strength North', '456 Oak Ave, Northside', 100, 1, CAST('QR_Entrada_Beta' AS VARBINARY(MAX)), CAST('QR_Salida_Beta' AS VARBINARY(MAX))),
+('Gamma Wellness South', '789 Pine Rd, South End', 200, 1, CAST('QR_Entrada_Gamma' AS VARBINARY(MAX)), CAST('QR_Salida_Gamma' AS VARBINARY(MAX))),
+('Delta Cardio West', '101 Maple Blvd, West End', 80, 1, CAST('QR_Entrada_Delta' AS VARBINARY(MAX)), CAST('QR_Salida_Delta' AS VARBINARY(MAX))),
+('Epsilon Yoga East', '202 Birch Ln, Eastside', 50, 0, CAST('QR_Entrada_Epsilon' AS VARBINARY(MAX)), CAST('QR_Salida_Epsilon' AS VARBINARY(MAX))); -- Inactive gym
+GO
+
+PRINT 'Inserting into HorariosGimnasio...';
+-- Gym 1 (Alpha)
+INSERT INTO HorariosGimnasio (id_gimnasio, dia_semana, hora_apertura, hora_cierre) VALUES
+(1, 'Lunes', '06:00:00', '22:00:00'),
+(1, 'Martes', '06:00:00', '22:00:00'),
+(1, 'Miercoles', '06:00:00', '22:00:00'),
+(1, 'Jueves', '06:00:00', '22:00:00'),
+(1, 'Viernes', '06:00:00', '21:00:00');
+-- Gym 2 (Beta) - Fewer days for variety
+INSERT INTO HorariosGimnasio (id_gimnasio, dia_semana, hora_apertura, hora_cierre) VALUES
+(2, 'Lunes', '07:00:00', '21:00:00'),
+(2, 'Miercoles', '07:00:00', '21:00:00'),
+(2, 'Viernes', '07:00:00', '20:00:00'),
+(2, 'Sabado', '09:00:00', '17:00:00');
+-- Need 5 total records, add one more for Gym 1
+INSERT INTO HorariosGimnasio (id_gimnasio, dia_semana, hora_apertura, hora_cierre) VALUES
+(1, 'Sabado', '08:00:00', '18:00:00');
+GO
+-- Note: Roles already populated by schema script ('Cliente', 'Entrenador', 'Administrador', 'AdminGimnasio' with IDs 1-4 assumed)
+
+PRINT 'Inserting into Usuarios...';
+-- **FIXED**: Removed oauth_provider and oauth_id columns from INSERT
+INSERT INTO Usuarios (nombre, apellido, email, password_hash, fecha_nacimiento, genero, direccion, telefono, activo, email_verificado) VALUES
+('Alice', 'Smith', 'alice.smith@email.com', 'hash1', '1990-05-15', 'Femenino', '11 Elm St', '555-1111', 1, 1),
+('Bob', 'Johnson', 'bob.j@email.com', 'hash2', '1985-08-20', 'Masculino', '22 Oak St', '555-2222', 1, 1),
+('Charlie', 'Davis', 'charlie.d@email.com', 'hash3', '1995-01-10', 'Masculino', '33 Pine St', '555-3333', 1, 1), -- Trainer
+('Diana', 'Miller', 'diana.m@email.com', 'hash4', '1988-11-30', 'Femenino', '44 Maple St', '555-4444', 1, 1), -- Gym Admin
+('Ethan', 'Wilson', 'ethan.w@email.com', 'hash5', '2000-03-25', 'Masculino', '55 Birch St', '555-5555', 0, 0); -- Inactive/Unverified
+GO
+
+PRINT 'Inserting into UsuarioRoles...';
+-- Assign roles (Assuming User IDs 1-5 generated sequentially)
+INSERT INTO UsuarioRoles (id_usuario, id_rol) VALUES
+(1, 1), -- Alice is Cliente
+(2, 1), -- Bob is Cliente
+(3, 2), -- Charlie is Entrenador
+(4, 4), -- Diana is AdminGimnasio
+(5, 1); -- Ethan is Cliente (even if inactive)
+GO
+
+PRINT 'Inserting into GimnasioAdministradores...';
+-- Assign Gym Admins to Gyms (User 4 is AdminGimnasio)
+INSERT INTO GimnasioAdministradores (id_gimnasio, id_usuario) VALUES
+(1, 4), -- Diana manages Alpha Fitness
+(2, 4), -- Diana also manages Beta Strength
+(3, 4); -- Diana also manages Gamma Wellness
+-- Need 5, add more assignments
+INSERT INTO GimnasioAdministradores (id_gimnasio, id_usuario) VALUES
+(4, 4); -- Diana manages Delta Cardio
+-- Assign Charlie (Trainer, ID 3) as admin for Gamma Wellness (example)
+INSERT INTO GimnasioAdministradores (id_gimnasio, id_usuario) VALUES
+(3, 3); -- Charlie also "manages" Gamma (check if role allows this in app logic)
+GO
+
+PRINT 'Inserting into EntrenadorGimnasios...';
+-- Assign Trainers to Gyms (User 3 is Trainer)
+INSERT INTO EntrenadorGimnasios (id_usuario, id_gimnasio) VALUES
+(3, 1), -- Charlie works at Alpha Fitness
+(3, 2), -- Charlie also works at Beta Strength
+(3, 3), -- Charlie also works at Gamma Wellness
+(3, 4); -- Charlie also works at Delta Cardio
+-- Let's assign Trainer 3 to Gym 1 again (maybe different shift/role - although PK prevents exact duplicate)
+-- Need a 5th distinct record. Let's assume user 4 (Diana) is also a trainer for demo.
+INSERT INTO EntrenadorGimnasios (id_usuario, id_gimnasio) VALUES
+(4, 1); -- Diana (as hypothetical trainer) at Alpha
+GO
+
+-- ======== Gym Infrastructure =========
+
+PRINT 'Inserting into EspaciosDeportivos...';
+-- Gym 1 (Alpha)
+INSERT INTO EspaciosDeportivos (id_gimnasio, nombre_espacio, descripcion, capacidad, reservable) VALUES
+(1, 'Sala de Pesas Principal', 'Área principal con máquinas y pesos libres', 30, 0), -- Not reservable directly
+(1, 'Estudio Yoga/Pilates', 'Sala para clases dirigidas y práctica individual', 15, 1),
+-- Gym 2 (Beta)
+(2, 'Zona Cardio', 'Área con cintas, elípticas y bicicletas', 20, 0),
+(2, 'Box Crossfit', 'Espacio equipado para entrenamiento funcional', 12, 1),
+-- Gym 3 (Gamma)
+(3, 'Piscina Interior', 'Piscina climatizada para natación', 25, 1);
+GO
+
+PRINT 'Inserting into MaquinasEjercicio...';
+-- Space 1 (Alpha - Sala de Pesas)
+INSERT INTO MaquinasEjercicio (id_espacio, nombre, tipo_maquina, descripcion, fecha_adquisicion, estado, reservable, codigo_qr) VALUES
+(1, 'Prensa de Piernas A', 'Fuerza', 'Máquina de prensa de piernas inclinada', '2022-01-15', 'Disponible', 1, CAST('QR_LegPressA' AS VARBINARY(MAX))),
+(1, 'Máquina Poleas Doble', 'Fuerza', 'Estación de poleas ajustables', '2022-01-15', 'Disponible', 0, CAST('QR_CableCross' AS VARBINARY(MAX))),
+-- Space 3 (Beta - Zona Cardio)
+(3, 'Cinta Correr Technogym 1', 'Cardio', 'Cinta de correr profesional', '2021-11-01', 'Disponible', 1, CAST('QR_TreadmillT1' AS VARBINARY(MAX))),
+(3, 'Elíptica LifeFitness 2', 'Cardio', 'Máquina elíptica', '2021-11-01', 'EnMantenimiento', 0, CAST('QR_EllipticalLF2' AS VARBINARY(MAX))),
+-- Space 4 (Beta - Box Crossfit)
+(4, 'Remo Concept2 Mod D', 'Cardio/Fuerza', 'Máquina de remo indoor', '2022-05-20', 'Disponible', 1, CAST('QR_RowerC2D' AS VARBINARY(MAX)));
+GO
+
+PRINT 'Inserting into MantenimientosEquipos...';
+-- Machine 4 (Elliptical LifeFitness 2 is EnMantenimiento)
+INSERT INTO MantenimientosEquipos (id_maquina, id_usuario_reporta, id_usuario_atiende, descripcion_falla, fecha_inicio_mantenimiento, estado_mantenimiento, notas_mantenimiento) VALUES
+(4, 1, 4, 'La pantalla parpadea y se apaga sola.', GETDATE(), 'EnProgreso', 'Revisando conexión eléctrica interna.'),
+-- Machine 1 (Past Maintenance)
+(1, 2, 4, 'El asiento estaba flojo.', DATEADD(month, -2, GETDATE()), 'Resuelta', 'Tornillos del asiento reapretados.'),
+-- Machine 5 (Reported Issue)
+(5, 1, NULL, 'La cadena hace un ruido extraño al tirar fuerte.', GETDATE(), 'Reportada', 'Pendiente de revisión por técnico.'),
+-- Machine 3 (Scheduled Maintenance)
+(3, 4, 4, 'Mantenimiento preventivo anual.', DATEADD(day, 1, GETDATE()), 'Reportada', 'Programado para mañana.'),
+-- Machine 2 (Cancelled request)
+(2, 5, 4, 'Usuario creyó oir un ruido, pero no se replica.', DATEADD(day, -5, GETDATE()), 'Cancelada', 'No se encontró falla tras inspección.');
+GO
+
+-- ========= Reservations =========
+
+PRINT 'Inserting into ReservasEspacios...';
+-- **FIXED**: Date/Time calculation
+INSERT INTO ReservasEspacios (id_usuario, id_espacio, fecha_hora_inicio, fecha_hora_fin, estado, asistio) VALUES
+(1, 2, CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 09:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 10:00:00' AS DATETIME), 'Confirmada', NULL),
+(2, 2, CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 10:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 11:00:00' AS DATETIME), 'Confirmada', NULL),
+(1, 4, CAST(FORMAT(DATEADD(day, 2, GETDATE()), 'yyyy-MM-dd') + ' 18:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 2, GETDATE()), 'yyyy-MM-dd') + ' 19:00:00' AS DATETIME), 'Confirmada', NULL),
+(5, 5, CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 07:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 08:00:00' AS DATETIME), 'Completada', 1), -- Past reservation attended
+(2, 5, CAST(FORMAT(DATEADD(day, -2, GETDATE()), 'yyyy-MM-dd') + ' 12:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -2, GETDATE()), 'yyyy-MM-dd') + ' 13:00:00' AS DATETIME), 'NoShow', 0); -- Past reservation missed
+GO
+
+PRINT 'Inserting into ReservasMaquinas...';
+-- **FIXED**: Date/Time calculation
+INSERT INTO ReservasMaquinas (id_usuario, id_maquina, fecha_hora_inicio, fecha_hora_fin, estado, asistio) VALUES
+(1, 1, CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 11:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 11:30:00' AS DATETIME), 'Confirmada', NULL),
+(2, 3, CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 08:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 08:45:00' AS DATETIME), 'Confirmada', NULL),
+(5, 3, CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 09:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 09:30:00' AS DATETIME), 'Cancelada', NULL), -- Cancelled
+(1, 5, CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 17:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 17:30:00' AS DATETIME), 'Completada', 1), -- Attended
+(2, 5, CAST(FORMAT(DATEADD(day, -2, GETDATE()), 'yyyy-MM-dd') + ' 17:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -2, GETDATE()), 'yyyy-MM-dd') + ' 17:30:00' AS DATETIME), 'NoShow', 0); -- Missed
+GO
+
+PRINT 'Inserting into ReservasEntrenador...';
+-- **FIXED**: Date/Time calculation
+INSERT INTO ReservasEntrenador (id_cliente, id_entrenador, id_espacio, fecha_hora_inicio, fecha_hora_fin, estado, asistio_cliente, asistio_entrenador) VALUES
+(1, 3, 2, CAST(FORMAT(DATEADD(day, 3, GETDATE()), 'yyyy-MM-dd') + ' 10:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 3, GETDATE()), 'yyyy-MM-dd') + ' 11:00:00' AS DATETIME), 'Confirmada', NULL, NULL),
+(2, 3, NULL, CAST(FORMAT(DATEADD(day, 4, GETDATE()), 'yyyy-MM-dd') + ' 15:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, 4, GETDATE()), 'yyyy-MM-dd') + ' 16:00:00' AS DATETIME), 'Confirmada', NULL, NULL),
+(1, 3, 1, CAST(FORMAT(DATEADD(day, -5, GETDATE()), 'yyyy-MM-dd') + ' 11:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -5, GETDATE()), 'yyyy-MM-dd') + ' 12:00:00' AS DATETIME), 'Completada', 1, 1),
+(2, 3, NULL, CAST(FORMAT(DATEADD(day, -6, GETDATE()), 'yyyy-MM-dd') + ' 09:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -6, GETDATE()), 'yyyy-MM-dd') + ' 10:00:00' AS DATETIME), 'NoShowCliente', 0, 1),
+(5, 3, 4, CAST(FORMAT(DATEADD(day, -7, GETDATE()), 'yyyy-MM-dd') + ' 14:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -7, GETDATE()), 'yyyy-MM-dd') + ' 15:00:00' AS DATETIME), 'NoShowEntrenador', 1, 0);
+GO
+
+-- ========= Attendance & Tracking =========
+
+PRINT 'Inserting into CheckIns...';
+-- **FIXED**: Date/Time calculation for past checkins
+INSERT INTO CheckIns (id_usuario, id_gimnasio, hora_entrada, hora_salida) VALUES
+(1, 1, DATEADD(hour, -2, GETDATE()), NULL), -- Alice checked into Alpha 2 hours ago, still there
+(2, 2, DATEADD(hour, -3, GETDATE()), DATEADD(hour, -1, GETDATE())), -- Bob checked into Beta, left 1 hour ago
+(3, 1, CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 08:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 12:00:00' AS DATETIME)), -- Charlie (Trainer) at Alpha yesterday
+(4, 1, CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 09:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -1, GETDATE()), 'yyyy-MM-dd') + ' 17:00:00' AS DATETIME)), -- Diana (Admin) at Alpha yesterday
+(5, 3, CAST(FORMAT(DATEADD(day, -2, GETDATE()), 'yyyy-MM-dd') + ' 10:00:00' AS DATETIME), CAST(FORMAT(DATEADD(day, -2, GETDATE()), 'yyyy-MM-dd') + ' 11:30:00' AS DATETIME)); -- Ethan at Gamma 2 days ago
+GO
+
+PRINT 'Inserting into FormulariosSintomas...';
+-- Assuming CheckIn IDs 1-5 correspond to the inserts above
+INSERT INTO FormulariosSintomas (id_checkin, id_usuario, tiene_sintomas, tuvo_contacto_reciente, resultado_evaluacion) VALUES
+(1, 1, 0, 0, 'Aprobado'),
+(2, 2, 0, 0, 'Aprobado'),
+(3, 3, 0, 0, 'Aprobado'),
+(4, 4, 0, 0, 'Aprobado'),
+(5, 5, 1, 0, 'Rechazado'); -- Ethan rejected (CheckIn ID 5)
+GO
+
+-- ========= Workouts & Classes =========
+
+PRINT 'Inserting into Ejercicios...';
+INSERT INTO Ejercicios (nombre, descripcion, musculo_objetivo, url_video_demostracion, id_creador) VALUES
+('Press de Banca', 'Ejercicio de empuje para pectoral, hombros y tríceps.', 'Pectoral, Hombros, Tríceps', 'http://video.url/benchpress', 3),
+('Sentadilla con Barra', 'Ejercicio fundamental para piernas y glúteos.', 'Cuádriceps, Glúteos, Isquiotibiales', 'http://video.url/squat', 3),
+('Peso Muerto', 'Levantamiento compuesto para espalda, piernas y glúteos.', 'Espalda Baja, Isquiotibiales, Glúteos', 'http://video.url/deadlift', NULL),
+('Dominadas', 'Ejercicio de tracción para la espalda y bíceps.', 'Dorsales, Bíceps', 'http://video.url/pullups', 3),
+('Plancha Abdominal', 'Ejercicio isométrico para el core.', 'Abdominales, Core', 'http://video.url/plank', NULL);
+GO
+
+PRINT 'Inserting into Rutinas...';
+-- Trainer 3 (Charlie) creates routines
+INSERT INTO Rutinas (id_entrenador_creador, nombre_rutina, descripcion, nivel, objetivo) VALUES
+(3, 'Fuerza Principiante 3xSemana', 'Rutina full-body para iniciarse en fuerza.', 'Principiante', 'Fuerza'),
+(3, 'Hipertrofia Torso/Pierna', 'Rutina dividida para ganancia muscular intermedia.', 'Intermedio', 'Hipertrofia'),
+(3, 'Acondicionamiento Metabólico Avanzado', 'Circuito de alta intensidad.', 'Avanzado', 'Resistencia'),
+(3, 'Movilidad y Flexibilidad Diaria', 'Rutina corta para mejorar el rango de movimiento.', 'Principiante', 'Flexibilidad'),
+(3, 'Preparación Oposiciones Bombero', 'Entrenamiento específico alta exigencia.', 'Avanzado', 'Rendimiento Específico');
+GO
+
+PRINT 'Inserting into RutinaEjercicios...';
+-- Exercises for Routine 1 (Fuerza Principiante) - Assuming Exercise IDs 1-5 & Rutina ID 1
+INSERT INTO RutinaEjercicios (id_rutina, id_ejercicio, orden, series, repeticiones, descanso_segundos, notas_ejercicio) VALUES
+(1, 2, 1, '3', '8-12', 90, 'Enfocarse en la técnica.'), -- Sentadilla
+(1, 1, 2, '3', '8-12', 90, 'Bajar la barra hasta el pecho.'), -- Press Banca
+(1, 4, 3, '3', 'AMRAP', 120, 'Asistidas si es necesario.'); -- Dominadas (AMRAP = As Many Reps As Possible)
+-- Exercises for Routine 2 (Hipertrofia Torso/Pierna) - Assuming Rutina ID 2
+INSERT INTO RutinaEjercicios (id_rutina, id_ejercicio, orden, series, repeticiones, descanso_segundos, notas_ejercicio) VALUES
+(2, 1, 1, '4', '6-10', 75, NULL), -- Press Banca
+(2, 3, 2, '1', '5', 180, 'Solo una serie pesada.'); -- Peso Muerto (example)
+GO
+
+PRINT 'Inserting into UsuarioRutinas...';
+-- Trainer 3 (Charlie) assigns routines (Assuming Rutina IDs 1-5)
+INSERT INTO UsuarioRutinas (id_usuario, id_rutina, id_entrenador_asignador, activa) VALUES
+(1, 1, 3, 1), -- Alice gets Routine 1
+(2, 1, 3, 1), -- Bob gets Routine 1
+(1, 2, 3, 0), -- Alice gets Routine 2 (inactive)
+(5, 3, 3, 1), -- Ethan gets Routine 3
+(1, 4, 3, 1); -- Alice gets Routine 4 (active mobility)
+GO
+
+
+PRINT 'Inserting into RegistrosEntrenamiento...';
+-- User 1 (Alice) logging exercises from Routine 1 (Assuming RutinaEjercicio IDs 1, 2, 3)
+INSERT INTO RegistrosEntrenamiento (id_usuario, id_ejercicio, id_rutina_ejercicio, fecha_hora, series_completadas, repeticiones_completadas, peso_utilizado, duracion_minutos, notas_usuario) VALUES
+(1, 2, 1, DATEADD(day, -1, GETDATE()), 3, '10, 10, 9', 40.00, 15, 'Costó la última serie'), -- Sentadilla
+(1, 1, 2, DATEADD(day, -1, GETDATE()), 3, '8, 8, 8', 30.00, 12, 'Buena forma'), -- Press Banca
+(1, 4, 3, DATEADD(day, -1, GETDATE()), 3, '5, 4, 3', NULL, 10, 'Usé banda de asistencia verde'); -- Dominadas
+-- User 2 (Bob) logging an exercise not tied to a specific routine plan (Assuming Exercise ID 5)
+INSERT INTO RegistrosEntrenamiento (id_usuario, id_ejercicio, id_rutina_ejercicio, fecha_hora, series_completadas, repeticiones_completadas, peso_utilizado, duracion_minutos, notas_usuario) VALUES
+(2, 5, NULL, DATEADD(hour, -1, GETDATE()), 4, '60s, 60s, 75s, 75s', NULL, 10, 'Plancha mantenida'); -- Plancha
+-- User 1 logging another exercise (Assuming Exercise ID 3)
+INSERT INTO RegistrosEntrenamiento (id_usuario, id_ejercicio, id_rutina_ejercicio, fecha_hora, series_completadas, repeticiones_completadas, peso_utilizado, duracion_minutos, notas_usuario) VALUES
+(1, 3, NULL, DATEADD(day, -3, GETDATE()), 1, '5', 80.00, 8, 'Peso muerto, técnica ok'); -- Peso Muerto
+GO
+
+PRINT 'Inserting into Clases...';
+-- **FIXED**: Date/Time calculation for live classes
+INSERT INTO Clases (id_gimnasio, id_entrenador, nombre_clase, descripcion, tipo, url_clase, fecha_hora_inicio, duracion_minutos, capacidad_maxima, activa) VALUES
+(1, 3, 'Spinning Intenso Mañanero', 'Clase de ciclismo indoor de alta intensidad.', 'EnVivo', 'http://stream.url/spin1', CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 07:00:00' AS DATETIME), 45, 20, 1),
+(1, 3, 'Yoga Restaurativo', 'Clase suave para relajar y estirar.', 'EnVivo', 'http://stream.url/yoga1', CAST(FORMAT(DATEADD(day, 1, GETDATE()), 'yyyy-MM-dd') + ' 19:00:00' AS DATETIME), 60, 15, 1),
+(2, NULL, 'Introducción al Levantamiento Olímpico', 'Grabación explicando Snatch y Clean & Jerk.', 'Grabada', 'http://video.url/olyintro', NULL, 40, NULL, 1), -- Recorded, no trainer assigned directly
+(3, 3, 'AquaGym Divertido', 'Ejercicios acuáticos en piscina.', 'EnVivo', 'http://stream.url/aqua1', CAST(FORMAT(DATEADD(day, 2, GETDATE()), 'yyyy-MM-dd') + ' 11:00:00' AS DATETIME), 50, 25, 1),
+(1, 3, 'HIIT Express Mediodía', 'Entrenamiento interválico corto y efectivo.', 'Grabada', 'http://video.url/hiit1', NULL, 30, NULL, 0); -- Recorded but inactive
+GO
+
+PRINT 'Inserting into InscripcionesClases...';
+-- Users enrolling in Live classes (Assuming Class IDs 1, 2, 4)
+INSERT INTO InscripcionesClases (id_usuario, id_clase, asistio) VALUES
+(1, 1, NULL), -- Alice en Spinning
+(2, 1, NULL), -- Bob en Spinning
+(5, 2, NULL), -- Ethan en Yoga Restaurativo
+(1, 4, NULL), -- Alice en AquaGym
+(2, 4, NULL); -- Bob en AquaGym
+GO
+
+-- ========= Memberships & Payments =========
+
+PRINT 'Inserting into TiposMembresia...';
+INSERT INTO TiposMembresia (nombre, descripcion, duracion_meses, precio, activo) VALUES
+('Mensual Básica', 'Acceso estándar al gimnasio.', 1, 39.99, 1),
+('Mensual Premium', 'Acceso estándar + Clases incluidas.', 1, 59.99, 1),
+('Anual Básica', 'Acceso estándar por 12 meses.', 12, 399.99, 1),
+('Pack 10 Sesiones', 'Bono de 10 accesos al gimnasio.', 3, 99.99, 1), -- Duration is validity
+('Semanal Visitante', 'Acceso por 7 días.', 0, 19.99, 0); -- Example: duration 0 for non-monthly, currently inactive
+GO
+
+PRINT 'Inserting into Membresias...';
+-- Assuming User IDs 1-5 and Membership Type IDs 1-5
+INSERT INTO Membresias (id_usuario, id_tipo_membresia, id_gimnasio_principal, fecha_inicio, fecha_fin, estado, auto_renovar) VALUES
+(1, 2, 1, DATEADD(day, -15, GETDATE()), DATEADD(day, 15, GETDATE()), 'Activa', 1), -- Alice
+(2, 3, 2, DATEADD(year, -1, GETDATE()), DATEADD(day, -1, GETDATE()), 'Expirada', 0), -- Bob
+(3, 1, 1, DATEADD(day, -5, GETDATE()), DATEADD(day, 25, GETDATE()), 'Activa', 0), -- Charlie
+(4, 3, 1, DATEADD(month, -6, GETDATE()), DATEADD(month, 6, GETDATE()), 'Activa', 0), -- Diana
+(5, 1, 3, GETDATE(), DATEADD(month, 1, GETDATE()), 'PendientePago', 0); -- Ethan
+GO
+
+PRINT 'Inserting into Pagos...';
+-- Assuming Membership IDs 1-5 correspond to the inserts above
+INSERT INTO Pagos (id_usuario, id_membresia, monto, moneda, metodo_pago, id_transaccion_externa, estado_pago, descripcion) VALUES
+(1, 1, 59.99, 'EUR', 'Stripe', 'txn_alice123', 'Completado', 'Pago Membresia Premium Mensual'),
+(2, 2, 399.99, 'EUR', DATEADD(year, -1, GETDATE()), 'TarjetaCredito', 'txn_bob456', 'Completado', 'Pago Membresia Anual Basica'),
+(5, 5, 39.99, 'EUR', 'PayPal', 'txn_ethan789', 'Fallido', 'Pago Membresia Mensual Basica'),
+(3, 3, 0.00, 'EUR', 'AdminComp', 'comp_charlie1', 'Completado', 'Membresia Cortesia Entrenador'),
+(1, NULL, 75.00, 'EUR', 'Stripe', 'txn_alice_pt_1', 'Completado', 'Sesión Entrenamiento Personal con Charlie');
+GO
+
+-- ========= User Details =========
+
+PRINT 'Inserting into PersonalInformation...';
+-- Assumes User IDs 1-5
+INSERT INTO PersonalInformation (id_usuario, altura_cm, peso_inicial_kg, peso_actual_kg, peso_objetivo_kg, objetivo_principal, experiencia_entrenamiento, nivel_actividad_diaria, condiciones_medicas, disponibilidad_entrenamiento, preferencia_lugar_entrenamiento) VALUES
+(1, 165.0, 65.0, 62.5, 60.0, 'Perder grasa y tonificar', 'Intermedio', 'Ligero', 'Ninguna', 'Lunes, Miércoles, Viernes por la mañana', 'Gimnasio'),
+(2, 180.0, 90.0, 88.0, 85.0, 'Ganar fuerza', 'Principiante', 'Sedentario', 'Polen (alergia)', 'Martes y Jueves por la tarde', 'Gimnasio'),
+(3, 178.0, 78.0, 79.0, 82.0, 'Mantener forma, ayudar a otros', 'Avanzado', 'Activo', NULL, 'Flexible, principalmente mañanas', 'Indiferente'), -- Trainer
+(4, 170.0, 70.0, 70.0, 70.0, 'Mantenimiento salud general', 'Intermedio', 'Moderado', 'Asma leve', 'Fines de semana', 'Mixto'), -- Admin
+(5, 190.0, 85.0, 85.0, 95.0, 'Ganar masa muscular', 'Ninguna', 'Ligero', 'Lesión hombro antigua (recuperado)', 'Noches entre semana', 'Gimnasio');
+GO
+
+PRINT 'Inserting into Notificaciones...';
+-- Assumes User IDs 1-5
+INSERT INTO Notificaciones (id_usuario, tipo, nombre, descripcion) VALUES
+(1, 'Reserva', 'Recordatorio Reserva Mañana', 'Tu reserva de Spinning Intenso Mañanero es mañana a las 07:00.'),
+(2, 'Membresia', 'Tu Membresía Ha Expirado', 'Tu membresía Anual Básica expiró ayer. ¡Renuévala para seguir entrenando!'),
+(5, 'Pago', 'Error en el Pago de Membresía', 'No pudimos procesar el pago de tu Membresía Mensual Básica. Revisa tu método de pago.'),
+(1, 'Clase', 'Nueva Clase Disponible', 'Charlie ha añadido una nueva clase grabada: HIIT Express Mediodía.'),
+(3, 'Mantenimiento', 'Equipo Reportado', 'Se ha reportado una incidencia en Remo Concept2 Mod D (ID 5).');
+GO
+
+PRINT 'Finished inserting sample data.';

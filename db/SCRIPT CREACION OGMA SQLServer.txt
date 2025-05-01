@@ -1,0 +1,500 @@
+-- SQL Server Conversion of MySQL Gym Management Schema
+
+-- Note:
+-- - AUTO_INCREMENT changed to IDENTITY(1,1)
+-- - TEXT changed to NVARCHAR(MAX)
+-- - BLOB changed to VARBINARY(MAX)
+-- - BOOLEAN changed to BIT (1 for TRUE, 0 for FALSE)
+-- - ENUM changed to VARCHAR with CHECK constraints
+-- - CURRENT_TIMESTAMP changed to GETDATE()
+-- - UNIQUE KEY changed to CONSTRAINT ... UNIQUE
+-- - INDEX definitions moved to separate CREATE INDEX statements after table creation
+-- - Inline COMMENT syntax removed and converted to standard SQL comments (--).
+-- - `ON UPDATE CURRENT_TIMESTAMP` removed from PersonalInformation.fecha_ultima_actualizacion (requires a TRIGGER in SQL Server).
+-- - Added explicit constraint names for clarity.
+-- - Added GO batch separators.
+
+-- ========= Core Entities ==========
+
+-- RF20: Registering a New Gym
+CREATE TABLE Gimnasios (
+    id_gimnasio INT PRIMARY KEY IDENTITY(1,1),
+    nombre NVARCHAR(150) NOT NULL,
+    direccion NVARCHAR(MAX) NOT NULL,
+    capacidad_maxima INT NOT NULL DEFAULT 100, -- RF07
+    -- telefono VARCHAR(20), -- Consider adding contact info
+    activo BIT DEFAULT 1, -- To easily deactivate a gym listing (1 = TRUE)
+    codigo_qr_entrada VARBINARY(MAX),
+    codigo_qr_salida VARBINARY(MAX),
+    CONSTRAINT UQ_Gimnasios_nombre UNIQUE (nombre)
+);
+GO
+
+-- RF19: Modifying Service Hours
+CREATE TABLE HorariosGimnasio (
+    id_horario_gimnasio INT PRIMARY KEY IDENTITY(1,1),
+    id_gimnasio INT NOT NULL,
+    dia_semana VARCHAR(10) NOT NULL, -- Max length 'Miercoles'
+    hora_apertura TIME NOT NULL,
+    hora_cierre TIME NOT NULL,
+    CONSTRAINT FK_HorariosGimnasio_Gimnasio FOREIGN KEY (id_gimnasio) REFERENCES Gimnasios(id_gimnasio) ON DELETE CASCADE,
+    CONSTRAINT CK_HorariosGimnasio_dia_semana CHECK (dia_semana IN ('Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo')),
+    CONSTRAINT UK_gimnasio_dia UNIQUE (id_gimnasio, dia_semana)
+);
+GO
+
+-- RF04: Role and Permission Management
+CREATE TABLE Roles (
+    id_rol INT PRIMARY KEY IDENTITY(1,1),
+    nombre_rol VARCHAR(50) NOT NULL,
+    -- Ej: Cliente, Entrenador, Administrador, AdminGimnasio
+    -- permissions NVARCHAR(MAX) -- Optional: JSON or text defining specific granular permissions
+    CONSTRAINT UQ_Roles_nombre_rol UNIQUE (nombre_rol)
+);
+GO
+
+-- Insert default roles
+INSERT INTO Roles (nombre_rol) VALUES ('Cliente'), ('Entrenador'), ('Administrador'), ('AdminGimnasio');
+GO
+
+-- RF01, RF02, RF03: User Registration, Authentication, Profile Management
+CREATE TABLE Usuarios (
+    id_usuario INT PRIMARY KEY IDENTITY(1,1),
+    nombre NVARCHAR(100),
+    apellido NVARCHAR(100), -- Previously 'aperisio'
+    email VARCHAR(100) NOT NULL,
+    password_hash VARCHAR(255), -- Store hashed passwords ONLY
+    fecha_registro DATETIME DEFAULT GETDATE(),
+    activo BIT DEFAULT 1, -- 1 = TRUE
+    foto_url VARCHAR(255), -- RF03
+    fecha_nacimiento DATE, -- Combined from details tables
+    genero VARCHAR(20), -- Combined from details tables
+    direccion NVARCHAR(255), -- Combined from details tables
+    telefono VARCHAR(20), -- Added for completeness
+    -- For RF01/RF02 Third-party auth
+    oauth_provider VARCHAR(50), -- e.g., google, facebook
+    oauth_id VARCHAR(100),
+    -- For RF01 email verification
+    email_verificado BIT DEFAULT 0, -- 0 = FALSE
+    token_verificacion_email VARCHAR(100),
+    fecha_expiracion_token DATETIME,
+    -- For RF14 Penalties
+    alertas_no_asistencia INT DEFAULT 0,
+    penalizado_hasta DATETIME NULL,
+    CONSTRAINT UQ_Usuarios_email UNIQUE (email),    
+);
+GO
+
+-- RF04: Assign roles to users
+CREATE TABLE UsuarioRoles (
+    id_usuario INT NOT NULL,
+    id_rol INT NOT NULL,
+    CONSTRAINT PK_UsuarioRoles PRIMARY KEY (id_usuario, id_rol),
+    CONSTRAINT FK_UsuarioRoles_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_UsuarioRoles_Rol FOREIGN KEY (id_rol) REFERENCES Roles(id_rol) ON DELETE CASCADE
+);
+GO
+
+-- RF20: Assign specific admins to gyms
+CREATE TABLE GimnasioAdministradores (
+    id_gimnasio INT NOT NULL,
+    id_usuario INT NOT NULL,
+    CONSTRAINT PK_GimnasioAdministradores PRIMARY KEY (id_gimnasio, id_usuario),
+    CONSTRAINT FK_GimnasioAdmin_Gimnasio FOREIGN KEY (id_gimnasio) REFERENCES Gimnasios(id_gimnasio) ON DELETE CASCADE,
+    CONSTRAINT FK_GimnasioAdmin_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE
+    -- Constraint: Ensure the user has an AdminGimnasio or Administrador role (can be enforced in application logic or triggers)
+);
+GO
+
+-- Link Trainers to specific Gyms (Optional but recommended for larger setups)
+CREATE TABLE EntrenadorGimnasios (
+    id_usuario INT NOT NULL, -- User must have 'Entrenador' role
+    id_gimnasio INT NOT NULL,
+    CONSTRAINT PK_EntrenadorGimnasios PRIMARY KEY (id_usuario, id_gimnasio),
+    CONSTRAINT FK_EntrenadorGimnasios_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_EntrenadorGimnasios_Gimnasio FOREIGN KEY (id_gimnasio) REFERENCES Gimnasios(id_gimnasio) ON DELETE CASCADE
+);
+GO
+
+
+-- ========= Gym Infrastructure =========
+
+-- RF05, RF17: Spaces within a Gym
+CREATE TABLE EspaciosDeportivos (
+    id_espacio INT PRIMARY KEY IDENTITY(1,1),
+    id_gimnasio INT NOT NULL,
+    nombre_espacio NVARCHAR(100) NOT NULL,
+    descripcion NVARCHAR(MAX),
+    capacidad INT DEFAULT 1, -- Capacity of the specific space
+    reservable BIT DEFAULT 1, -- 1 = TRUE
+    CONSTRAINT FK_EspaciosDeportivos_Gimnasio FOREIGN KEY (id_gimnasio) REFERENCES Gimnasios(id_gimnasio) ON DELETE CASCADE,
+    CONSTRAINT UK_gimnasio_espacio_nombre UNIQUE (id_gimnasio, nombre_espacio)
+);
+GO
+
+-- RF05, RF17, RF18: Equipment/Machines
+CREATE TABLE MaquinasEjercicio (
+    id_maquina INT PRIMARY KEY IDENTITY(1,1),
+    id_espacio INT NOT NULL, -- Location within the gym
+    nombre NVARCHAR(100) NOT NULL,
+    tipo_maquina NVARCHAR(100), -- RF17
+    descripcion NVARCHAR(MAX),
+    fecha_adquisicion DATE,
+    estado VARCHAR(20) DEFAULT 'Disponible' NOT NULL, -- RF11, RF18 (Max length 'EnMantenimiento')
+    reservable BIT DEFAULT 1, -- 1 = TRUE
+    codigo_qr VARBINARY(MAX),
+    CONSTRAINT FK_MaquinasEjercicio_Espacio FOREIGN KEY (id_espacio) REFERENCES EspaciosDeportivos(id_espacio) ON DELETE CASCADE,
+    CONSTRAINT CK_MaquinasEjercicio_estado CHECK (estado IN ('Disponible', 'EnMantenimiento', 'Averiada', 'Desactivada'))
+    -- Consider adding UNIQUE constraint on nombre within a gym if needed (requires joining EspaciosDeportivos to get id_gimnasio)
+    -- UNIQUE KEY uk_gimnasio_maquina_nombre (id_gimnasio, nombre) -- Needs trigger or careful application logic due to FK indirection
+);
+GO
+
+-- RF11, RF18: Equipment Maintenance Log
+CREATE TABLE MantenimientosEquipos (
+    id_mantenimiento INT PRIMARY KEY IDENTITY(1,1),
+    id_maquina INT NOT NULL,
+    id_usuario_reporta INT NULL, -- User who reported the issue (RF11)
+    id_usuario_atiende INT NULL, -- Admin/Staff who handles maintenance
+    fecha_reporte DATETIME DEFAULT GETDATE(),
+    descripcion_falla NVARCHAR(MAX) NOT NULL,
+    fecha_inicio_mantenimiento DATETIME,
+    fecha_fin_mantenimiento DATETIME,
+    estado_mantenimiento VARCHAR(15) DEFAULT 'Reportada', -- Max length 'EnProgreso'
+    notas_mantenimiento NVARCHAR(MAX),
+    CONSTRAINT FK_MantenimientosEquipos_Maquina FOREIGN KEY (id_maquina) REFERENCES MaquinasEjercicio(id_maquina) ON DELETE CASCADE,
+    CONSTRAINT FK_MantenimientosEquipos_UsuarioReporta FOREIGN KEY (id_usuario_reporta) REFERENCES Usuarios(id_usuario) ON DELETE NO ACTION,
+    CONSTRAINT FK_MantenimientosEquipos_UsuarioAtiende FOREIGN KEY (id_usuario_atiende) REFERENCES Usuarios(id_usuario) ON DELETE NO ACTION,
+    CONSTRAINT CK_MantenimientosEquipos_estado CHECK (estado_mantenimiento IN ('Reportada', 'EnProgreso', 'Resuelta', 'Cancelada'))
+);
+GO
+
+-- ========= Reservations =========
+
+-- RF05, RF06, RF13, RF14: Space Reservations
+CREATE TABLE ReservasEspacios (
+    id_reserva_espacio INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_espacio INT NOT NULL,
+    fecha_hora_inicio DATETIME NOT NULL,
+    fecha_hora_fin DATETIME NOT NULL,
+    fecha_creacion DATETIME DEFAULT GETDATE(),
+    estado VARCHAR(15) DEFAULT 'Confirmada', -- RF06, RF14 (Max length 'Confirmada')
+    asistio BIT NULL, -- Explicit flag for attendance - RF14
+    notificacion_fin_enviada BIT DEFAULT 0, -- RF13 (0 = FALSE)
+    CONSTRAINT FK_ReservasEspacios_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_ReservasEspacios_Espacio FOREIGN KEY (id_espacio) REFERENCES EspaciosDeportivos(id_espacio) ON DELETE CASCADE,
+    CONSTRAINT CK_ReservasEspacios_estado CHECK (estado IN ('Confirmada', 'Cancelada', 'Completada', 'NoShow'))
+    -- Add constraint to prevent overlapping reservations for the same space in DB if possible, or handle in application logic
+);
+GO
+-- Indexes for ReservasEspacios
+CREATE INDEX idx_espacio_tiempo ON ReservasEspacios (id_espacio, fecha_hora_inicio, fecha_hora_fin);
+CREATE INDEX idx_usuario_tiempo ON ReservasEspacios (id_usuario, fecha_hora_inicio);
+GO
+
+-- RF05, RF06, RF13, RF14: Machine Reservations
+CREATE TABLE ReservasMaquinas (
+    id_reserva_maquina INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_maquina INT NOT NULL,
+    fecha_hora_inicio DATETIME NOT NULL,
+    fecha_hora_fin DATETIME NOT NULL,
+    fecha_creacion DATETIME DEFAULT GETDATE(),
+    estado VARCHAR(15) DEFAULT 'Confirmada', -- RF06, RF14 (Max length 'Confirmada')
+    asistio BIT NULL, -- Explicit flag for attendance - RF14
+    notificacion_fin_enviada BIT DEFAULT 0, -- RF13 (0 = FALSE)
+    CONSTRAINT FK_ReservasMaquinas_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_ReservasMaquinas_Maquina FOREIGN KEY (id_maquina) REFERENCES MaquinasEjercicio(id_maquina) ON DELETE CASCADE,
+    CONSTRAINT CK_ReservasMaquinas_estado CHECK (estado IN ('Confirmada', 'Cancelada', 'Completada', 'NoShow'))
+     -- Add constraint to prevent overlapping reservations for the same machine in DB if possible, or handle in application logic
+);
+GO
+-- Indexes for ReservasMaquinas
+CREATE INDEX idx_maquina_tiempo ON ReservasMaquinas (id_maquina, fecha_hora_inicio, fecha_hora_fin);
+CREATE INDEX idx_usuario_maquina_tiempo ON ReservasMaquinas (id_usuario, fecha_hora_inicio); -- Renamed index slightly for clarity
+GO
+
+-- Reservations for Trainers (can be linked to a space if needed)
+CREATE TABLE ReservasEntrenador (
+    id_reserva_entrenador INT PRIMARY KEY IDENTITY(1,1),
+    id_cliente INT NOT NULL, -- User booking the trainer
+    id_entrenador INT NOT NULL, -- User with 'Entrenador' role
+    id_espacio INT NULL, -- Optional: Space where session occurs
+    fecha_hora_inicio DATETIME NOT NULL,
+    fecha_hora_fin DATETIME NOT NULL,
+    fecha_creacion DATETIME DEFAULT GETDATE(),
+    estado VARCHAR(20) DEFAULT 'Confirmada', -- Max length 'NoShowEntrenador'
+    asistio_cliente BIT NULL,
+    asistio_entrenador BIT NULL,
+    notas NVARCHAR(MAX),
+    CONSTRAINT FK_ReservasEntrenador_Cliente FOREIGN KEY (id_cliente) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_ReservasEntrenador_Entrenador FOREIGN KEY (id_entrenador) REFERENCES Usuarios(id_usuario), -- No Cascade on trainer deletion? Check requirement. Assuming no cascade.
+    CONSTRAINT FK_ReservasEntrenador_Espacio FOREIGN KEY (id_espacio) REFERENCES EspaciosDeportivos(id_espacio) ON DELETE SET NULL,
+    CONSTRAINT CK_ReservasEntrenador_estado CHECK (estado IN ('Confirmada', 'Cancelada', 'Completada', 'NoShowCliente', 'NoShowEntrenador'))
+    -- Constraint: id_entrenador must be a user with the Trainer role (App logic or Trigger)
+    -- Constraint: id_cliente must be a user with the Client role (or any valid user) (App logic or Trigger)
+);
+GO
+-- Indexes for ReservasEntrenador
+CREATE INDEX idx_entrenador_tiempo ON ReservasEntrenador (id_entrenador, fecha_hora_inicio, fecha_hora_fin);
+CREATE INDEX idx_cliente_tiempo ON ReservasEntrenador (id_cliente, fecha_hora_inicio);
+GO
+
+
+-- ========= Attendance & Tracking =========
+
+-- RF07, RF08, RF15, RF16: Gym Check-ins
+CREATE TABLE CheckIns (
+    id_checkin INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_gimnasio INT NOT NULL,
+    hora_entrada DATETIME DEFAULT GETDATE(),
+    hora_salida DATETIME NULL,
+    -- Link to a reservation if check-in is for a specific booking (optional)
+    -- id_reserva_espacio INT NULL,
+    -- id_reserva_maquina INT NULL,
+    -- id_reserva_entrenador INT NULL,
+    CONSTRAINT FK_CheckIns_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_CheckIns_Gimnasio FOREIGN KEY (id_gimnasio) REFERENCES Gimnasios(id_gimnasio) ON DELETE CASCADE
+    -- CONSTRAINT FK_CheckIns_ReservaEspacio FOREIGN KEY (id_reserva_espacio) REFERENCES ReservasEspacios(id_reserva_espacio) ON DELETE SET NULL,
+    -- CONSTRAINT FK_CheckIns_ReservaMaquina FOREIGN KEY (id_reserva_maquina) REFERENCES ReservasMaquinas(id_reserva_maquina) ON DELETE SET NULL,
+    -- CONSTRAINT FK_CheckIns_ReservaEntrenador FOREIGN KEY (id_reserva_entrenador) REFERENCES ReservasEntrenador(id_reserva_entrenador) ON DELETE SET NULL
+);
+GO
+
+-- RF15: COVID-19 Symptom Form
+CREATE TABLE FormulariosSintomas (
+    id_formulario INT PRIMARY KEY IDENTITY(1,1),
+    id_checkin INT NOT NULL, -- Each check-in attempt requires one form
+    id_usuario INT NOT NULL,
+    fecha_envio DATETIME DEFAULT GETDATE(),
+    tiene_sintomas BIT NOT NULL,
+    tuvo_contacto_reciente BIT NOT NULL,
+    -- Add other specific questions as needed
+    -- pregunta_fiebre BIT,
+    -- pregunta_tos BIT,
+    resultado_evaluacion VARCHAR(10) NOT NULL, -- Max length 'Rechazado'
+    CONSTRAINT FK_FormulariosSintomas_Checkin FOREIGN KEY (id_checkin) REFERENCES CheckIns(id_checkin) ON DELETE CASCADE,
+    CONSTRAINT FK_FormulariosSintomas_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario), -- No cascade? If user deleted, keep form? Assuming no cascade.
+    CONSTRAINT UQ_FormulariosSintomas_id_checkin UNIQUE (id_checkin),
+    CONSTRAINT CK_FormulariosSintomas_resultado CHECK (resultado_evaluacion IN ('Aprobado', 'Rechazado'))
+);
+GO
+
+
+-- ========= Workouts & Classes =========
+
+-- Base definition for exercises
+CREATE TABLE Ejercicios (
+    id_ejercicio INT PRIMARY KEY IDENTITY(1,1),
+    nombre NVARCHAR(150) NOT NULL,
+    descripcion NVARCHAR(MAX),
+    musculo_objetivo NVARCHAR(100),
+    url_video_demostracion VARCHAR(255),
+    id_creador INT NULL, -- Optional: Link to trainer who added it
+    CONSTRAINT FK_Ejercicios_Creador FOREIGN KEY (id_creador) REFERENCES Usuarios(id_usuario) ON DELETE SET NULL,
+    CONSTRAINT UQ_Ejercicios_nombre UNIQUE (nombre)
+);
+GO
+
+-- RF09: Custom Workout Routines
+CREATE TABLE Rutinas (
+    id_rutina INT PRIMARY KEY IDENTITY(1,1),
+    id_entrenador_creador INT NOT NULL,
+    nombre_rutina NVARCHAR(150) NOT NULL,
+    descripcion NVARCHAR(MAX),
+    nivel VARCHAR(15), -- Assuming DYNAMIC meant ENUM (Max length 'Principiante')
+    objetivo NVARCHAR(100), -- e.g., Fuerza, Hipertrofia, Resistencia
+    fecha_creacion DATETIME DEFAULT GETDATE(),
+    CONSTRAINT FK_Rutinas_Entrenador FOREIGN KEY (id_entrenador_creador) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT CK_Rutinas_nivel CHECK (nivel IN ('Principiante', 'Intermedio', 'Avanzado'))
+    -- Constraint: id_entrenador_creador must have Trainer role (App Logic or Trigger)
+);
+GO
+
+-- RF09: Exercises within a Routine
+CREATE TABLE RutinaEjercicios (
+    id_rutina_ejercicio INT PRIMARY KEY IDENTITY(1,1),
+    id_rutina INT NOT NULL,
+    id_ejercicio INT NOT NULL,
+    orden INT NOT NULL, -- Order of exercise in the routine
+    series VARCHAR(20), -- e.g., 3, 4, 5x5
+    repeticiones VARCHAR(20), -- e.g., 8-12, 15, AMRAP
+    descanso_segundos INT, -- Rest time in seconds
+    notas_ejercicio NVARCHAR(MAX),
+    CONSTRAINT FK_RutinaEjercicios_Rutina FOREIGN KEY (id_rutina) REFERENCES Rutinas(id_rutina) ON DELETE CASCADE,
+    CONSTRAINT FK_RutinaEjercicios_Ejercicio FOREIGN KEY (id_ejercicio) REFERENCES Ejercicios(id_ejercicio) ON DELETE CASCADE,
+    CONSTRAINT UK_rutina_ejercicio_orden UNIQUE (id_rutina, id_ejercicio, orden)
+);
+GO
+
+-- RF09: Assigning Routines to Users
+CREATE TABLE UsuarioRutinas (
+    id_usuario_rutina INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_rutina INT NOT NULL,
+    id_entrenador_asignador INT NOT NULL,
+    fecha_asignacion DATETIME DEFAULT GETDATE(),
+    activa BIT DEFAULT 1, -- Is this the currently active routine for the user? (1 = TRUE)
+    CONSTRAINT FK_UsuarioRutinas_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_UsuarioRutinas_Rutina FOREIGN KEY (id_rutina) REFERENCES Rutinas(id_rutina), -- Don't cascade if routine deleted? Keep record? Assuming no cascade.
+    CONSTRAINT FK_UsuarioRutinas_Entrenador FOREIGN KEY (id_entrenador_asignador) REFERENCES Usuarios(id_usuario) -- Don't cascade if trainer deleted? Keep record? Assuming no cascade.
+    -- Constraints: Ensure roles are appropriate (App Logic or Trigger)
+);
+GO
+
+-- RF03: Workout Log (Replaces Merroresia) - User records completed exercises
+CREATE TABLE RegistrosEntrenamiento (
+    id_registro INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_ejercicio INT NOT NULL,
+    id_rutina_ejercicio INT NULL, -- Optional: Link to the specific routine exercise if applicable
+    fecha_hora DATETIME DEFAULT GETDATE(),
+    series_completadas INT,
+    repeticiones_completadas VARCHAR(50), -- Could be complex, e.g., "10, 9, 8"
+    peso_utilizado DECIMAL(10, 2),
+    duracion_minutos INT,
+    notas_usuario NVARCHAR(MAX),
+    CONSTRAINT FK_RegistrosEntrenamiento_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_RegistrosEntrenamiento_Ejercicio FOREIGN KEY (id_ejercicio) REFERENCES Ejercicios(id_ejercicio), -- Don't cascade if exercise deleted? Assuming no cascade.
+    CONSTRAINT FK_RegistrosEntrenamiento_RutinaEjercicio FOREIGN KEY (id_rutina_ejercicio) REFERENCES RutinaEjercicios(id_rutina_ejercicio) ON DELETE NO ACTION
+);
+GO
+
+-- RF10: Live and Recorded Classes
+CREATE TABLE Clases (
+    id_clase INT PRIMARY KEY IDENTITY(1,1),
+    id_gimnasio INT NOT NULL, -- Gym offering the class
+    id_entrenador INT NULL, -- Trainer leading the class
+    nombre_clase NVARCHAR(150) NOT NULL,
+    descripcion NVARCHAR(MAX),
+    tipo VARCHAR(10) NOT NULL, -- Max length 'Grabada'
+    url_clase VARCHAR(255), -- URL for live stream or recorded video
+    fecha_hora_inicio DATETIME, -- Required for live classes
+    duracion_minutos INT,
+    capacidad_maxima INT NULL, -- For live classes with limited spots
+    activa BIT DEFAULT 1, -- 1 = TRUE
+    CONSTRAINT FK_Clases_Gimnasio FOREIGN KEY (id_gimnasio) REFERENCES Gimnasios(id_gimnasio) ON DELETE CASCADE,
+    CONSTRAINT FK_Clases_Entrenador FOREIGN KEY (id_entrenador) REFERENCES Usuarios(id_usuario) ON DELETE SET NULL,
+    CONSTRAINT CK_Clases_tipo CHECK (tipo IN ('EnVivo', 'Grabada'))
+    -- Constraint: id_entrenador should have Trainer role (App Logic or Trigger)
+);
+GO
+
+-- RF10: User Enrollment in Classes
+CREATE TABLE InscripcionesClases (
+    id_inscripcion INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_clase INT NOT NULL,
+    fecha_inscripcion DATETIME DEFAULT GETDATE(),
+    asistio BIT NULL, -- Track attendance for live classes
+    CONSTRAINT FK_InscripcionesClases_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_InscripcionesClases_Clase FOREIGN KEY (id_clase) REFERENCES Clases(id_clase) ON DELETE CASCADE,
+    CONSTRAINT UK_usuario_clase UNIQUE (id_usuario, id_clase)
+);
+GO
+
+-- ========= Memberships & Payments =========
+
+-- Define different types of memberships available
+CREATE TABLE TiposMembresia (
+    id_tipo_membresia INT PRIMARY KEY IDENTITY(1,1),
+    nombre NVARCHAR(100) NOT NULL,
+    descripcion NVARCHAR(MAX),
+    duracion_meses INT NOT NULL, -- Or could be days/weeks
+    precio DECIMAL(10, 2) NOT NULL,
+    activo BIT DEFAULT 1, -- Can this type be purchased? (1 = TRUE)
+    CONSTRAINT UQ_TiposMembresia_nombre UNIQUE (nombre)
+);
+GO
+
+-- RF12: User Memberships
+CREATE TABLE Membresias (
+    id_membresia INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_tipo_membresia INT NOT NULL,
+    id_gimnasio_principal INT NULL, -- Optional: If membership is tied to one gym
+    fecha_inicio DATE NOT NULL,
+    fecha_fin DATE NOT NULL,
+    estado VARCHAR(15) DEFAULT 'PendientePago', -- Max length 'PendientePago'
+    fecha_compra DATETIME DEFAULT GETDATE(),
+    auto_renovar BIT DEFAULT 0, -- 0 = FALSE
+    CONSTRAINT FK_Membresias_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_Membresias_TipoMembresia FOREIGN KEY (id_tipo_membresia) REFERENCES TiposMembresia(id_tipo_membresia),
+    CONSTRAINT FK_Membresias_GimnasioPrincipal FOREIGN KEY (id_gimnasio_principal) REFERENCES Gimnasios(id_gimnasio) ON DELETE SET NULL,
+    CONSTRAINT CK_Membresias_estado CHECK (estado IN ('Activa', 'Inactiva', 'Expirada', 'PendientePago', 'Cancelada'))
+);
+GO
+-- Index for Membresias
+CREATE INDEX idx_usuario_fechas ON Membresias (id_usuario, fecha_inicio, fecha_fin);
+GO
+
+-- RF12: Payment Records
+CREATE TABLE Pagos (
+    id_pago INT PRIMARY KEY IDENTITY(1,1),
+    id_usuario INT NOT NULL,
+    id_membresia INT NULL, -- Link payment to the membership purchased/renewed
+    monto DECIMAL(10, 2) NOT NULL,
+    moneda VARCHAR(3) DEFAULT 'USD',
+    fecha_pago DATETIME DEFAULT GETDATE(),
+    metodo_pago VARCHAR(50), -- e.g., 'Stripe', 'PayPal', 'TarjetaCredito'
+    id_transaccion_externa VARCHAR(100), -- ID from payment provider
+    estado_pago VARCHAR(15) DEFAULT 'Pendiente', -- Max length 'Reembolsado'
+    descripcion NVARCHAR(MAX), -- e.g., "Pago Membresia Mensual"
+    CONSTRAINT FK_Pagos_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT FK_Pagos_Membresia FOREIGN KEY (id_membresia) REFERENCES Membresias(id_membresia) ON DELETE NO ACTION,
+    CONSTRAINT UQ_Pagos_id_transaccion_externa UNIQUE (id_transaccion_externa),
+    CONSTRAINT CK_Pagos_estado_pago CHECK (estado_pago IN ('Pendiente', 'Completado', 'Fallido', 'Reembolsado'))
+);
+GO
+
+
+-- Table to store detailed personal fitness and health information for users
+CREATE TABLE PersonalInformation (
+    -- Foreign Key linking to the main user table. Also Primary Key here.
+    id_usuario INT PRIMARY KEY,
+
+    -- Physical Measurements
+    altura_cm DECIMAL(5, 1) NULL, -- Altura del usuario en centímetros (e.g., 175.5)
+    peso_inicial_kg DECIMAL(5, 2) NULL, -- Peso del usuario al registrarse o iniciar un plan, en kg (e.g., 80.50)
+    peso_actual_kg DECIMAL(5, 2) NULL, -- Peso más reciente registrado por el usuario, en kg
+    peso_objetivo_kg DECIMAL(5, 2) NULL, -- Peso que el usuario desea alcanzar, en kg
+
+    -- Goals and Experience
+    objetivo_principal NVARCHAR(MAX) NULL, -- Descripción del objetivo principal del usuario (ej: perder peso, ganar músculo, mejorar resistencia)
+    experiencia_entrenamiento VARCHAR(15) NULL, -- Nivel de experiencia previa en entrenamiento (Max length 'Principiante')
+    nivel_actividad_diaria VARCHAR(10) NULL, -- Nivel general de actividad física fuera del gimnasio (trabajo, hobbies) (Max length 'Sedentario')
+
+    -- Health and Availability
+    condiciones_medicas NVARCHAR(MAX) NULL, -- Descripción de condiciones médicas relevantes (alergias, lesiones, enfermedades crónicas)
+    disponibilidad_entrenamiento NVARCHAR(MAX) NULL, -- Texto libre describiendo días/horas preferidos o disponibles para entrenar
+    preferencia_lugar_entrenamiento VARCHAR(15) NULL, -- Lugar preferido por el usuario para realizar sus entrenamientos (Max length 'Indiferente')
+
+    -- Timestamps (Optional but good practice)
+    fecha_creacion DATETIME DEFAULT GETDATE(),
+    fecha_ultima_actualizacion DATETIME DEFAULT GETDATE(), -- NOTE: ON UPDATE needs a TRIGGER in SQL Server
+
+    -- Foreign Key Constraint
+    CONSTRAINT FK_PersonalInformation_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario)
+        ON DELETE CASCADE -- If the user is deleted, delete their personal info too.
+        ON UPDATE CASCADE, -- If the user ID changes (less common), update it here.
+
+    -- Check Constraints for ENUM replacements
+    CONSTRAINT CK_PersonalInformation_experiencia CHECK (experiencia_entrenamiento IN ('Principiante', 'Intermedio', 'Avanzado', 'Ninguna') OR experiencia_entrenamiento IS NULL),
+    CONSTRAINT CK_PersonalInformation_actividad CHECK (nivel_actividad_diaria IN ('Sedentario', 'Ligero', 'Moderado', 'Activo', 'MuyActivo') OR nivel_actividad_diaria IS NULL),
+    CONSTRAINT CK_PersonalInformation_lugar CHECK (preferencia_lugar_entrenamiento IN ('Casa', 'AireLibre', 'Gimnasio', 'Mixto', 'Indiferente') OR preferencia_lugar_entrenamiento IS NULL)
+);
+GO
+
+
+CREATE TABLE Notificaciones (
+    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(), -- Use SQL Server's native UUID type
+    id_usuario INT NOT NULL, -- Referencia al usuario
+    tipo VARCHAR(100) NOT NULL, -- Tipo de notificación
+    fecha DATETIME NOT NULL DEFAULT GETDATE(), -- Fecha de creación
+    nombre NVARCHAR(255) NOT NULL, -- Título o nombre de la notificación
+    descripcion NVARCHAR(MAX), -- Descripción detallada
+    CONSTRAINT FK_Notificaciones_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE
+);
+GO

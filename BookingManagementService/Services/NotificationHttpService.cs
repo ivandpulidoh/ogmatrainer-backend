@@ -1,8 +1,7 @@
-using BookingManagementService.Entities;
 using BookingManagementService.Models;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
-using System.Net.Http.Json; // Requires System.Net.Http.Json package if not implicitly included
+using System.Net.Http.Json;
 using System.Threading.Tasks;
 
 namespace BookingManagementService.Services;
@@ -18,40 +17,42 @@ public class NotificationHttpService : INotificationService
         _logger = logger;
     }
 
-    public async Task SendMissedReservationNotificationAsync(Usuario user, ReservaMaquina reservation)
+    // Implement the generic method
+    public async Task SendNotificationAsync(NotificationRequest notification)
     {
-        var client = _httpClientFactory.CreateClient("NotificationServiceClient"); // Use named client
-
-        var notification = new NotificationRequest
+        if (notification == null)
         {
-            IdUsuario = user.IdUsuario,
-            Tipo = "ReservationMissed",
-            Nombre = "Reservación Perdida",
-            Descripcion = $"No asististe a tu reservación de la máquina '{reservation.MaquinaEjercicio?.Nombre ?? "Desconocida"}' programada para {reservation.FechaHoraInicio.ToLocalTime():g}. La reservación ha sido marcada como no asistida."
-             // ToDo: Include machine name requires loading it first if not already loaded
-        };
+            _logger.LogWarning("Attempted to send a null notification.");
+            return; // Or throw ArgumentNullException
+        }
 
-         try
-         {
-            var response = await client.PostAsJsonAsync("/api/Notifications", notification); // Adjust API path if needed
+        var client = _httpClientFactory.CreateClient("NotificationServiceClient");
+
+        try
+        {
+            var response = await client.PostAsJsonAsync("/api/Notifications", notification);
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("Successfully sent missed reservation notification for user {UserId}, reservation {ReservationId}", user.IdUsuario, reservation.IdReservaMaquina);
+                _logger.LogInformation("Successfully sent notification '{NotificationType}' for user {UserId}.",
+                    notification.Tipo, notification.IdUsuario);
             }
             else
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Failed to send notification for user {UserId}. Status: {StatusCode}, Response: {Response}", user.IdUsuario, response.StatusCode, errorContent);
+                _logger.LogError("Failed to send notification '{NotificationType}' for user {UserId}. Status: {StatusCode}, Response: {Response}",
+                    notification.Tipo, notification.IdUsuario, response.StatusCode, errorContent);
             }
         }
         catch (HttpRequestException ex)
         {
-             _logger.LogError(ex, "HTTP request error sending notification for user {UserId}", user.IdUsuario);
+            _logger.LogError(ex, "HTTP request error sending notification '{NotificationType}' for user {UserId}",
+                 notification.Tipo, notification.IdUsuario);
         }
-         catch (Exception ex) // Catch other potential exceptions
-         {
-             _logger.LogError(ex, "Error sending notification for user {UserId}", user.IdUsuario);
-         }
+        catch (Exception ex) // Catch other potential exceptions
+        {
+            _logger.LogError(ex, "Error sending notification '{NotificationType}' for user {UserId}",
+                 notification.Tipo, notification.IdUsuario);
+        }
     }
 }

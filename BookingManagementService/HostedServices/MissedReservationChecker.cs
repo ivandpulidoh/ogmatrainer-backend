@@ -1,4 +1,5 @@
 using BookingManagementService.Data;
+using BookingManagementService.Models;
 using BookingManagementService.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,7 @@ namespace BookingManagementService.HostedServices;
 public class MissedReservationChecker : BackgroundService
 {
     private readonly ILogger<MissedReservationChecker> _logger;
-    private readonly IServiceProvider _serviceProvider; // To create scopes for DbContext/Services
+    private readonly IServiceProvider _serviceProvider;
     private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(5); // Check every 5 minutes
     private const int GracePeriodMinutes = 15;
 
@@ -61,15 +62,15 @@ public class MissedReservationChecker : BackgroundService
 
             var gracePeriodTime = DateTime.UtcNow.AddMinutes(-GracePeriodMinutes);
 
-            // Find reservations that started more than 15 mins ago, are still 'Confirmada',
-            // and haven't been marked as attended/unattended yet (Asistio is NULL).
+            var statusesToCheck = new[] { "Confirmada", "Pendiente" };
+
             var missedReservations = await dbContext.ReservasMaquinas
                 .Include(r => r.Usuario) // Need user info for notification
                 .Include(r => r.MaquinaEjercicio) // Need machine info for notification description
                 .Where(r => r.FechaHoraInicio <= gracePeriodTime &&
-                            r.Estado == "Confirmada" &&
+                            statusesToCheck.Contains(r.Estado) && 
                             r.Asistio == null)
-                .ToListAsync(cancellationToken); // Pass cancellation token
+                .ToListAsync(cancellationToken);
 
             if (!missedReservations.Any())
             {
@@ -82,42 +83,43 @@ public class MissedReservationChecker : BackgroundService
 
             foreach (var reservation in missedReservations)
             {
-                 if (cancellationToken.IsCancellationRequested) break; // Check before processing each
+                 if (cancellationToken.IsCancellationRequested) break;
 
-                _logger.LogWarning("Reservation {ReservationId} for user {UserId} potentially missed. Marking as NoShow.", reservation.IdReservaMaquina, reservation.IdUsuario);
+                _logger.LogWarning("Reservation {ReservationId} for user {UserId} potentially missed. Marking as Cancelada.", reservation.IdReservaMaquina, reservation.IdUsuario);
 
-                // Update status directly or call service method
-                reservation.Estado = "NoShow";
-                reservation.Asistio = false; // Mark explicitly as not attended
+                reservation.Estado = "Cancelada";
+                reservation.Asistio = false;
 
-                // Send notification
-                if (reservation.Usuario != null) // Ensure user was loaded
+                if (reservation.Usuario != null && reservation.MaquinaEjercicio != null) // Ensure data loaded
                 {
-                    await notificationService.SendMissedReservationNotificationAsync(reservation.Usuario, reservation);
+                    var notification = new NotificationRequest
+                    {
+                        IdUsuario = reservation.IdUsuario,
+                        Tipo = "ReservacionPerdida",
+                        Nombre = "Reservación Perdida",
+                        Descripcion = $"No asististe a tu reservación de la máquina '{reservation.MaquinaEjercicio.Nombre}' programada para {reservation.FechaHoraInicio.ToLocalTime():g}. La reservación ha sido marcada como no asistida."
+                    };
+                    // Use the injected service instance (processor or directly in checker)
+                    await notificationService.SendNotificationAsync(notification);
                 }
-                else
-                {
-                    _logger.LogError("Cannot send notification for reservation {ReservationId} because User data is missing.", reservation.IdReservaMaquina);
+                else {
+                    _logger.LogError("Cannot send notification for reservation {ReservationId} because User or Machine data is missing.", reservation.IdReservaMaquina);
                 }
-
-                 // Optional: Add error handling around notification sending if needed
             }
 
             try
             {
-                // Save all changes made in this scope
                  await dbContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Successfully processed {Count} missed reservations.", missedReservations.Count);
             }
             catch (DbUpdateException ex)
             {
                  _logger.LogError(ex, "Failed to save changes after processing missed reservations.");
-                 // Consider retry logic or specific error handling here
             }
             catch (OperationCanceledException)
             {
                 _logger.LogInformation("Cancellation requested during saving missed reservation changes.");
             }
-        } // Scope is disposed here, releasing DbContext etc.
+        }
     }
 }

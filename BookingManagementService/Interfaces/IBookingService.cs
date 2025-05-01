@@ -2,6 +2,14 @@ using BookingManagementService.Models;
 
 namespace BookingManagementService.Services;
 
+public enum CancellationResult
+{
+    Success,
+    NotFound,
+    Forbidden,
+    Conflict
+}
+
 public interface IBookingService
 {
     Task<(bool Success, int? ReservationId, string? ErrorMessage)> CreateMachineReservationAsync(CreateMachineReservationRequest request);
@@ -17,4 +25,8 @@ public interface IBookingService
     Task UpdateMachineAttendanceAsync(int reservationId, bool attended);
     Task UpdateTrainerAttendanceAsync(int reservationId, bool? clientAttended, bool? trainerAttended);
     Task UpdateClassAttendanceAsync(int registrationId, bool attended);
+
+    Task<CancellationResult> CancelMachineReservationAsync(int reservationId, int requestingUserId);
+    Task<CancellationResult> CancelTrainerReservationAsync(int reservationId, int requestingUserId, bool isAdmin);
+    Task<CancellationResult> CancelClassRegistrationAsync(int registrationId, int requestingUserId, bool isAdmin);
 }

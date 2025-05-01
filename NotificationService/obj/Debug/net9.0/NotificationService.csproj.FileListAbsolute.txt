@@ -155,3 +155,4 @@ C:\Users\HP\Documents\repos\ogma_trainer_backend\NotificationService\obj\Debug\n
 C:\Users\HP\Documents\repos\ogma_trainer_backend\NotificationService\obj\Debug\net9.0\NotificationService.pdb
 C:\Users\HP\Documents\repos\ogma_trainer_backend\NotificationService\obj\Debug\net9.0\NotificationService.genruntimeconfig.cache
 C:\Users\HP\Documents\repos\ogma_trainer_backend\NotificationService\obj\Debug\net9.0\ref\NotificationService.dll
+C:\Users\HP\Documents\repos\ogma_trainer_backend\NotificationService\obj\Debug\net9.0\NotificationService.sourcelink.json

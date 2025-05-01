@@ -170,3 +170,5 @@ C:\Users\HP\Documents\repos\ogma_trainer_backend\BookingManagementService\obj\De
 C:\Users\HP\Documents\repos\ogma_trainer_backend\BookingManagementService\obj\Debug\net9.0\BookingManagementService.pdb
 C:\Users\HP\Documents\repos\ogma_trainer_backend\BookingManagementService\obj\Debug\net9.0\BookingManagementService.genruntimeconfig.cache
 C:\Users\HP\Documents\repos\ogma_trainer_backend\BookingManagementService\obj\Debug\net9.0\ref\BookingManagementService.dll
+C:\Users\HP\Documents\repos\ogma_trainer_backend\BookingManagementService\bin\Debug\net9.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
+C:\Users\HP\Documents\repos\ogma_trainer_backend\BookingManagementService\obj\Debug\net9.0\BookingManagementService.sourcelink.json

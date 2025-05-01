@@ -27,15 +27,7 @@ if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer) || string.Is
 
 // 1. DbContext
 builder.Services.AddDbContext<UserManagementDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString),
-        mySqlOptions => mySqlOptions.EnableRetryOnFailure( // Optional: resilience
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null)
-        )
-    // .LogTo(Console.WriteLine, LogLevel.Information) // Optional: Log EF Core queries
-    // .EnableSensitiveDataLogging() // Optional: Only for development
-    );
+    options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
 
 // 2. Authentication
