@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "ZhF/gQNh54mJ7Hht0e1Snj8mVj8n3ai/Vwo1U47loRQ=",
+  "Source": "CapacityControlService",
+  "BasePath": "_content/CapacityControlService",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}

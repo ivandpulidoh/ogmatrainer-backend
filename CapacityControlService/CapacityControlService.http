@@ -1,0 +1,6 @@
+@CapacityControlService_HostAddress = http://localhost:5122
+
+GET {{CapacityControlService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

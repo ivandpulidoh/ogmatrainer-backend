@@ -1,0 +1,6 @@
+@RoutineEquipmentService_HostAddress = http://localhost:5067
+
+GET {{RoutineEquipmentService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
