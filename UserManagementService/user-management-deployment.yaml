@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-management
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-management
+  template:
+    metadata:
+      labels:
+        app: user-management
+    spec:
+      containers:
+      - name: user-management
+        image: ogmacontainers01.azurecr.io/user-management-service:latest
+        ports:
+        - containerPort: 5161
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Development"
+        - name: ASPNETCORE_URLS
+          value: "http://+:5161"
+        - name: ConnectionStrings__DefaultConnection
+          value: "Server=tcp:ogma-server-01.database.windows.net,1433;Initial Catalog=ogmatrainer-db;Persist Security Info=False;User ID=AdminOgma;Password=Canabis2505**;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+      imagePullSecrets:
+      - name: acr-secret

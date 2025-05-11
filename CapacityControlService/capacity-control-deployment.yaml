@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capacity-control
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: capacity-control
+  template:
+    metadata:
+      labels:
+        app: capacity-control
+    spec:
+      containers:
+      - name: capacity-control
+        image: ogmacontainers01.azurecr.io/capacity-control-service:latest
+        ports:
+        - containerPort: 5122
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Development"
+        - name: ASPNETCORE_URLS
+          value: "http://+:5122"
+        - name: ConnectionStrings__DefaultConnection
+          value: "Server=tcp:ogma-server-01.database.windows.net,1433;Initial Catalog=ogmatrainer-db;Persist Security Info=False;User ID=AdminOgma;Password=Canabis2505**;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+        - name: NotificationService__BaseUrl
+          value: http://notification-service
+      imagePullSecrets:
+      - name: acr-secret
