@@ -143,7 +143,8 @@ namespace UserManagementService.Services
         {
             _logger.LogInformation("Attempting to update user with ID: {UserId}", id);
             var user = await _context.Usuarios
-                .Include(u => u.UsuarioRoles) // Include roles for modification
+                .Include(u => u.UsuarioRoles)
+                .ThenInclude(ur => ur.Rol)
                 .FirstOrDefaultAsync(u => u.IdUsuario == id);
 
             if (user == null || !user.Activo)
@@ -181,24 +182,7 @@ namespace UserManagementService.Services
                                          .Where(ur => !userDto.Roles.Contains(ur.Rol.NombreRol, StringComparer.OrdinalIgnoreCase))
                                          .ToList();
                  _context.UsuarioRoles.RemoveRange(rolesToRemove);
-
-                 // Add new roles
-                 var currentRoleNames = user.UsuarioRoles.Select(ur => ur.Rol.NombreRol.ToLower()).ToList();
-                 foreach (var roleName in userDto.Roles.Distinct())
-                 {
-                     if (!currentRoleNames.Contains(roleName.ToLower()))
-                     {
-                         var role = await _context.Roles.FirstOrDefaultAsync(r => r.NombreRol.ToLower() == roleName.ToLower());
-                         if (role != null)
-                         {
-                              user.UsuarioRoles.Add(new UsuarioRol { IdRol = role.IdRol });
-                         }
-                         else
-                         {
-                              _logger.LogWarning("Role '{RoleName}' not found during user update for {UserId}", roleName, id);
-                         }
-                     }
-                 }
+                                  
              }
              // Else: If userDto.Roles is null, maybe don't change roles? Define behavior.
 

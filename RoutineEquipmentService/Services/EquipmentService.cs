@@ -49,6 +49,7 @@ public class EquipmentService : IEquipmentService
             Nombre = request.Nombre,
             TipoMaquina = request.TipoMaquina,
             Descripcion = request.Descripcion,
+            UrlImagen = request.UrlImagen,
             FechaAdquisicion = request.FechaAdquisicion,
             Estado = request.Estado,
             Reservable = request.Reservable,
@@ -114,9 +115,10 @@ public class EquipmentService : IEquipmentService
         // Update properties if provided
         if (!string.IsNullOrEmpty(request.Nombre)) machine.Nombre = request.Nombre;
         if (!string.IsNullOrEmpty(request.TipoMaquina)) machine.TipoMaquina = request.TipoMaquina;
-        if (request.Descripcion != null) machine.Descripcion = request.Descripcion; // Allow setting to empty string
+        if (request.UrlImagen != null) machine.UrlImagen = request.UrlImagen;
+        if (request.Descripcion != null) machine.Descripcion = request.Descripcion;
         if (request.FechaAdquisicion.HasValue) machine.FechaAdquisicion = request.FechaAdquisicion.Value;
-        if (!string.IsNullOrEmpty(request.Estado)) machine.Estado = request.Estado; // TODO: Validate estado value
+        if (!string.IsNullOrEmpty(request.Estado)) machine.Estado = request.Estado;
         if (request.Reservable.HasValue) machine.Reservable = request.Reservable.Value;
 
         // If name or description changed, regenerate QR code
@@ -183,6 +185,7 @@ public class EquipmentService : IEquipmentService
             IdEspacio = machine.IdEspacio,
             Nombre = machine.Nombre,
             TipoMaquina = machine.TipoMaquina,
+            UrlImagen = machine.UrlImagen,
             Descripcion = machine.Descripcion,
             FechaAdquisicion = machine.FechaAdquisicion,
             Estado = machine.Estado,

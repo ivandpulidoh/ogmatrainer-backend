@@ -37,7 +37,11 @@ public class MaquinaEjercicio
     public bool Reservable { get; set; } = true;
 
     [Column("codigo_qr")]
-    public byte[]? CodigoQr { get; set; } // VARBINARY(MAX) maps to byte[]
+    public byte[]? CodigoQr { get; set; }
+
+    [MaxLength(255)]
+    [Column("url_imagen")]
+    public string? UrlImagen { get; set; }
 
     // Navigation Property
     [ForeignKey("IdEspacio")]

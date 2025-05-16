@@ -48,7 +48,8 @@ public class RoutineService : IRoutineService
             Objetivo = request.Objetivo,
             NumeroDias = request.NumeroDias ?? request.DiasEjercicios.Select(de => de.DiaNumero).Distinct().Count(),
             IdEntrenadorCreador = creatorUserId,
-            FechaCreacion = DateTime.UtcNow
+            FechaCreacion = DateTime.UtcNow,
+            UrlImagen = request.UrlImagen
         };
 
         foreach (var diaEjercicioRequest in request.DiasEjercicios)
@@ -148,6 +149,7 @@ public class RoutineService : IRoutineService
         rutina.Objetivo = request.Objetivo;
         rutina.NumeroDias = request.NumeroDias ?? request.DiasEjercicios.Select(de => de.DiaNumero).Distinct().Count();
         // IdEntrenadorCreador and FechaCreacion are typically not updated.
+        rutina.UrlImagen = request.UrlImagen;
 
         // Simple strategy: Remove all existing day exercises and add new ones.
         // More complex strategies could involve tracking changes (add, update, delete individual day exercises).
@@ -195,14 +197,7 @@ public class RoutineService : IRoutineService
         {
             _logger.LogWarning("Routine with ID {RutinaId} not found for deletion.", rutinaId);
             return (false, "Routine not found.");
-        }
-
-        // Optional: Ownership check
-        if (rutina.IdEntrenadorCreador != deleterUserId /* && !userIsAdmin */)
-        {
-            _logger.LogWarning("User {DeleterId} not authorized to delete routine {RutinaId} created by {CreatorId}.", deleterUserId, rutinaId, rutina.IdEntrenadorCreador);
-            return (false, "You are not authorized to delete this routine.");
-        }
+        }        
 
         try
         {
@@ -230,6 +225,7 @@ public class RoutineService : IRoutineService
             Objetivo = rutina.Objetivo,
             FechaCreacion = rutina.FechaCreacion,
             NumeroDias = rutina.NumeroDias,
+            UrlImagen = rutina.UrlImagen,
             DiasEjercicios = rutina.DiasEjercicios?.Select(de => new RutinaDiaEjercicioResponse
             {
                 IdRutinaDiaEjercicio = de.IdRutinaDiaEjercicio,

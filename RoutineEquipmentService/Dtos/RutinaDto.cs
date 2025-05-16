@@ -12,6 +12,7 @@ public class CreateRutinaRequest
     [MaxLength(100)]
     public string? Objetivo { get; set; }
     public int? NumeroDias { get; set; }
+    public string? UrlImagen { get; set; }
     public List<RutinaDiaEjercicioRequest> DiasEjercicios { get; set; } = new();
 }
 
@@ -43,6 +44,7 @@ public class RutinaResponse
     public string? Objetivo { get; set; }
     public DateTime FechaCreacion { get; set; }
     public int? NumeroDias { get; set; }
+    public string? UrlImagen { get; set; }
     public List<RutinaDiaEjercicioResponse> DiasEjercicios { get; set; } = new();
 }
 

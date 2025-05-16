@@ -35,6 +35,9 @@ public class Rutina
     [Column("numero_dias")] // New field
     public int? NumeroDias { get; set; }
 
+    [Column("url_imagen")]
+    public string? UrlImagen { get; set; }
+
     // Navigation Property
     public virtual ICollection<RutinaDiaEjercicio> DiasEjercicios { get; set; } = new List<RutinaDiaEjercicio>();
 }

@@ -149,7 +149,7 @@ public class BookingsController : ControllerBase
         var bookings = await _bookingService.GetUserBookingsForDayAsync(userId, parsedDate);
         return Ok(bookings);
     }
-
+ 
 
     // GET api/bookings/day/{date} (e.g., /api/bookings/day/2024-07-28)
     [HttpGet("day/{date}")]
