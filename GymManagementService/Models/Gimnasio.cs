@@ -3,29 +3,37 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace GymManagementService.Models
 {
-    [Table("Gimnasios")] // Maps to the specific table name
+    [Table("Gimnasios")]
     public class Gimnasio
     {
-        [Key] // Primary Key
-        [Column("id_gimnasio")] // Maps to the specific column name
+        [Key]
+        [Column("id_gimnasio")]
         public int IdGimnasio { get; set; }
 
-        [Required] // Corresponds to NOT NULL
+        [Required]
         [StringLength(150)]
-        public string Nombre { get; set; } = null!; // Initialize non-nullable strings
+        public string Nombre { get; set; } = null!;
 
         [Required]
         public string Direccion { get; set; } = null!;
 
         [Column("capacidad_maxima")]
-        public int CapacidadMaxima { get; set; } = 100; // Matches default
+        public int CapacidadMaxima { get; set; } = 100;
 
-        public bool Activo { get; set; } = true; // Matches default
+        public bool Activo { get; set; } = true;
 
-        // Navigation Properties (relationships)
+        [Column("codigo_qr_entrada")]
+        public byte[]? CodigoQrEntrada { get; set; }
+
+        [Column("codigo_qr_salida")]
+        public byte[]? CodigoQrSalida { get; set; }
+
+        [Column("fomulario_obligatorio")]
+        public bool FormularioObligatorio { get; set; }
+
         public virtual ICollection<HorarioGimnasio>? Horarios { get; set; }
         public virtual ICollection<GimnasioAdministrador>? Administradores { get; set; }
         public virtual ICollection<EntrenadorGimnasio>? Entrenadores { get; set; }
-        // Add others if managed here, e.g., EspaciosDeportivos
+        
     }
 }

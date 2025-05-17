@@ -1,39 +1,67 @@
 using Microsoft.EntityFrameworkCore;
-using GymManagementService.Data; // Your DbContext namespace
-using Pomelo.EntityFrameworkCore.MySql.Infrastructure; // For ServerVersion
+using GymManagementService.Data;
+using GymManagementService.Models.Settings;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.Authorization;
 
-// Add services to the container.
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration;
+var jwtKey = configuration["Jwt:Key"];
+var jwtIssuer = configuration["Jwt:Issuer"];
+var jwtAudience = configuration["Jwt:Audience"];
 
-// Retrieve the connection string
+if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer) || string.IsNullOrEmpty(jwtAudience)) {
+     throw new InvalidOperationException("JWT settings (Key, Issuer, Audience) must be configured in appsettings.");
+}
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-// Register the DbContext
 builder.Services.AddDbContext<GymDbContext>(options =>
-    options.UseMySql(connectionString,
-        // Specify the MySQL server version
-        // AutoDetect is convenient but explicit version is more reliable
-        // Example for MySQL 8.0: ServerVersion.Create(8, 0, 29, ServerType.MySql)
-        ServerVersion.AutoDetect(connectionString),
+    options.UseSqlServer(connectionString,
         mySqlOptions => mySqlOptions.EnableRetryOnFailure(
             maxRetryCount: 5,
             maxRetryDelay: System.TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null) // Configure resilience
+            errorNumbersToAdd: null)
         )
-    // Optional: Add logging for EF Core queries (useful during development)
-    // .LogTo(Console.WriteLine, LogLevel.Information)
-    // .EnableSensitiveDataLogging() // Only in development!
     );
 
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+}).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
 
+builder.Services.AddAuthorization(options => {     
+     options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
+
+builder.Services.Configure<ExternalApiSettings>(
+    builder.Configuration.GetSection("ExternalApiSettings")
+);
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient();
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// *** Add this line AFTER builder.Services.AddControllers() ***
-// This handles potential object cycle issues when serializing entities with navigation properties
+
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
@@ -45,7 +73,6 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -54,6 +81,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

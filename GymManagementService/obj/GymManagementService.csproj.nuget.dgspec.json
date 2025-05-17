@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GYMManagement\\GymManagementService\\GymManagementService.csproj": {}
+    "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GymManagementService\\GymManagementService.csproj": {}
   },
   "projects": {
-    "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GYMManagement\\GymManagementService\\GymManagementService.csproj": {
+    "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GymManagementService\\GymManagementService.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GYMManagement\\GymManagementService\\GymManagementService.csproj",
+        "projectUniqueName": "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GymManagementService\\GymManagementService.csproj",
         "projectName": "GymManagementService",
-        "projectPath": "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GYMManagement\\GymManagementService\\GymManagementService.csproj",
+        "projectPath": "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GymManagementService\\GymManagementService.csproj",
         "packagesPath": "C:\\Users\\HP\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GYMManagement\\GymManagementService\\obj\\",
+        "outputPath": "C:\\Users\\HP\\Documents\\repos\\ogma_trainer_backend\\GymManagementService\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\HP\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -44,6 +44,10 @@
         "net9.0": {
           "targetAlias": "net9.0",
           "dependencies": {
+            "Microsoft.AspNetCore.Authentication.JwtBearer": {
+              "target": "Package",
+              "version": "[9.0.5, )"
+            },
             "Microsoft.AspNetCore.OpenApi": {
               "target": "Package",
               "version": "[9.0.4, )"
@@ -58,15 +62,15 @@
               "target": "Package",
               "version": "[9.0.4, )"
             },
+            "Microsoft.EntityFrameworkCore.SqlServer": {
+              "target": "Package",
+              "version": "[9.0.4, )"
+            },
             "Microsoft.EntityFrameworkCore.Tools": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
               "target": "Package",
               "version": "[9.0.4, )"
-            },
-            "Pomelo.EntityFrameworkCore.MySql": {
-              "target": "Package",
-              "version": "[9.0.0-preview.3.efcore.9.0.0, )"
             },
             "Swashbuckle.AspNetCore": {
               "target": "Package",

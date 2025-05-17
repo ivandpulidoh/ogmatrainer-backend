@@ -3,7 +3,14 @@ using Microsoft.EntityFrameworkCore;
 using GymManagementService.Data;
 using GymManagementService.Models;
 using System.Collections.Generic; // For List/IEnumerable
-using System.Threading.Tasks; // For async operations
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization; // For [Authorize]
+using Microsoft.AspNetCore.Http; // For IHttpContextAccessor
+using System.Net.Http.Headers; 
+using GymManagementService.DTOs;
+using GymManagementService.Models.Settings;
+using Microsoft.Extensions.Options;
+using System.Web; // For async operations
 
 namespace GymManagementService.Controllers
 {
@@ -11,11 +18,17 @@ namespace GymManagementService.Controllers
     [ApiController]
     public class GymsController : ControllerBase
     {
-        private readonly GymDbContext _context; // Inject the DbContext
+        private readonly GymDbContext _context;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ExternalApiSettings _apiSettings;   
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public GymsController(GymDbContext context)
+        public GymsController(GymDbContext context, IHttpClientFactory httpClientFactory, IOptions<ExternalApiSettings> apiSettings, IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
+            _httpClientFactory = httpClientFactory;
+            _apiSettings = apiSettings.Value;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         // GET: api/gyms
@@ -53,6 +66,8 @@ namespace GymManagementService.Controllers
         [HttpPost]
         [ProducesResponseType(typeof(Gimnasio), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<Gimnasio>> PostGimnasio([FromBody] Gimnasio gimnasio) // Use [FromBody]
         {
             if (!ModelState.IsValid) // Basic validation based on attributes
@@ -61,16 +76,85 @@ namespace GymManagementService.Controllers
             }
 
             // Check if gym with the same name already exists (based on UNIQUE constraint)
-             if (await _context.Gimnasios.AnyAsync(g => g.Nombre == gimnasio.Nombre))
-             {
-                 // Return a specific error for duplicate name
-                 ModelState.AddModelError("Nombre", $"A gym with the name '{gimnasio.Nombre}' already exists.");
-                 return Conflict(ModelState); // 409 Conflict is appropriate
-             }
+            if (await _context.Gimnasios.AnyAsync(g => g.Nombre == gimnasio.Nombre))
+            {
+                // Return a specific error for duplicate name
+                ModelState.AddModelError("Nombre", $"A gym with the name '{gimnasio.Nombre}' already exists.");
+                return Conflict(ModelState); // 409 Conflict is appropriate
+            }
 
 
             _context.Gimnasios.Add(gimnasio);
             await _context.SaveChangesAsync(); // Save changes to the database
+
+            if (string.IsNullOrWhiteSpace(_apiSettings.QrCodeGeneratorBaseUrl))
+            {                
+                return StatusCode(StatusCodes.Status500InternalServerError, "QR Code generator URL is not configured.");
+            }
+        
+            string? accessToken = _httpContextAccessor.HttpContext?.Request.Headers["Authorization"]
+                                    .FirstOrDefault()?.Split(" ").LastOrDefault();
+
+            if (string.IsNullOrEmpty(accessToken))
+            {                
+                return Unauthorized("Authorization token not found in the request to this service.");
+            }
+
+            var httpClient = _httpClientFactory.CreateClient(); 
+
+            httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", accessToken);           
+
+            string encodedGymId = HttpUtility.UrlEncode(gimnasio.IdGimnasio.ToString());
+            string encodedGymName = HttpUtility.UrlEncode(gimnasio.Nombre);
+
+            string qrApiUrlEntrada = $"{_apiSettings.QrCodeGeneratorBaseUrl}?Name={gimnasio.IdGimnasio}&Description={gimnasio.Nombre}";
+            string qrApiUrlSalida = $"{_apiSettings.QrCodeGeneratorBaseUrl}?Name={gimnasio.IdGimnasio}&Description={gimnasio.Nombre}";
+
+            Console.WriteLine(qrApiUrlEntrada);
+            try
+            {
+                HttpResponseMessage responseEntrada = await httpClient.GetAsync(qrApiUrlEntrada);
+                if (responseEntrada.IsSuccessStatusCode)
+                {
+                    gimnasio.CodigoQrEntrada = await responseEntrada.Content.ReadAsByteArrayAsync();
+                }
+                else
+                {
+                    var errorContent = await responseEntrada.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Error generating Entrada QR for Gym {gimnasio.Nombre} (ID: {gimnasio.IdGimnasio}): {responseEntrada.StatusCode} - {errorContent}");
+
+                    return StatusCode(StatusCodes.Status206PartialContent, $"Gym registered successfully, but failed to generate QR code: {responseEntrada.ReasonPhrase}");
+                }
+
+                // Generar Salida QR
+                HttpResponseMessage responseSalida = await httpClient.GetAsync(qrApiUrlSalida);
+                if (responseSalida.IsSuccessStatusCode)
+                {
+                    gimnasio.CodigoQrSalida = await responseSalida.Content.ReadAsByteArrayAsync();
+                }
+                else
+                {
+
+                    var errorContent = await responseSalida.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Error generating Salida QR for Gym {gimnasio.Nombre} (ID: {gimnasio.IdGimnasio}): {responseSalida.StatusCode} - {errorContent}");
+                    return StatusCode(StatusCodes.Status206PartialContent, $"Gym registered successfully, but failed to generate QR code salida: {responseSalida.ReasonPhrase}");
+                }
+
+                _context.Entry(gimnasio).State = EntityState.Modified;
+                await _context.SaveChangesAsync();
+            }
+            catch (HttpRequestException ex)
+            {
+                // Log network or other HTTP request errors
+                Console.WriteLine($"HttpRequestException while generating QR codes for Gym {gimnasio.Nombre}: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while communicating with the QR code generation service.");
+            }
+            catch (Exception ex) // Catch any other unexpected errors during QR processing
+            {
+                Console.WriteLine($"Exception while processing QR codes for Gym {gimnasio.Nombre}: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occurred while processing QR codes.");
+            }
 
             // Return 201 Created with the location and the created object
             return CreatedAtAction(nameof(GetGimnasio), new { id = gimnasio.IdGimnasio }, gimnasio);
@@ -142,13 +226,17 @@ namespace GymManagementService.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)] // Or 201 if creating a resource link
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> AddAdminToGym(int gymId, [FromBody] int userId) // Simple DTO just passing user ID
-        {
-            if (!await GimnasioExistsAsync(gymId))
-                return NotFound($"Gym with ID {gymId} not found.");
+        public async Task<IActionResult> AddAdminToGym(int gymId, [FromBody] UserIdRequestDto request)
+        {   
+            if (!ModelState.IsValid) 
+            {
+                return BadRequest(ModelState);
+            }
 
-            // Optional: Check if user exists and has 'AdminGimnasio' role (requires user service call or shared DB)
-            // if (!await UserExistsAndIsAdmin(userId)) return BadRequest("Invalid User ID or user is not an Admin.");
+            int userId = request.UserId;
+
+            if (!await GimnasioExistsAsync(gymId))
+                return NotFound($"Gym with ID {gymId} not found.");           
 
             var association = new GimnasioAdministrador { IdGimnasio = gymId, IdUsuario = userId };
 
@@ -191,12 +279,17 @@ namespace GymManagementService.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> AddTrainerToGym(int gymId, [FromBody] int userId)
+        public async Task<IActionResult> AddTrainerToGym(int gymId, [FromBody] UserIdRequestDto request)
         {
-            if (!await GimnasioExistsAsync(gymId)) // Use async version
-                return NotFound($"Gym with ID {gymId} not found.");
-            
-            if (!await UserExistsAndIsRole(userId, "Entrenador")) return BadRequest("Invalid User ID or user is not a Trainer.");
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            int userId = request.UserId;
+
+            if (!await GimnasioExistsAsync(gymId))
+                return NotFound($"Gym with ID {gymId} not found.");                       
 
             var association = new EntrenadorGimnasio { IdGimnasio = gymId, IdUsuario = userId };
 
@@ -257,38 +350,26 @@ namespace GymManagementService.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult<IEnumerable<int>>> GetGymAdministrators(int gymId)
         {
-            // 1. Check if the gym exists
-            if (!await GimnasioExistsAsync(gymId)) // Use async version
+            
+            if (!await GimnasioExistsAsync(gymId))
             {
                 return NotFound($"Gym with ID {gymId} not found.");
             }
 
-            // 2. Query the GimnasioAdministradores table
+           
             var adminIds = await _context.GimnasioAdministradores
-                                     .Where(ga => ga.IdGimnasio == gymId) // Filter by gym ID
-                                     .Select(ga => ga.IdUsuario)        // Select only the user ID
-                                     .ToListAsync();                     // Execute the query
+                                     .Where(ga => ga.IdGimnasio == gymId) 
+                                     .Select(ga => ga.IdUsuario)       
+                                     .ToListAsync();                     
 
-            // 3. Return the list of IDs
+            
             return Ok(adminIds);
         }
-
-        // Helper method to check if a gym exists
+        
         private async Task<bool> GimnasioExistsAsync(int id)
         {
             return await _context.Gimnasios.AnyAsync(e => e.IdGimnasio == id);
         }
-
-         // Placeholder for user validation (replace with actual logic if needed)
-         private async Task<bool> UserExistsAndIsRole(int userId, string roleName)
-         {
-             // In a real microservice architecture, this might involve:
-             // 1. Calling a separate User Service API.
-             // 2. Querying a shared user database (if applicable and designed carefully).
-             // For now, we'll assume the user ID is valid. Replace with real checks.
-             Console.WriteLine($"TODO: Verify user {userId} exists and has role '{roleName}'");
-             await Task.Delay(10); // Simulate async work
-             return true; // Placeholder
-         }
+        
     }
 }
