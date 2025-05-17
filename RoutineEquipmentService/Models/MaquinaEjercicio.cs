@@ -43,7 +43,8 @@ public class MaquinaEjercicio
     [Column("url_imagen")]
     public string? UrlImagen { get; set; }
 
-    // Navigation Property
+    public virtual ICollection<EjercicioMaquina> EjerciciosAsociados { get; set; } = new List<EjercicioMaquina>();
+    
     [ForeignKey("IdEspacio")]
     public virtual EspacioDeportivo? EspacioDeportivo { get; set; }
 }

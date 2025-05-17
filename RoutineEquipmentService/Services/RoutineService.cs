@@ -213,6 +213,82 @@ public class RoutineService : IRoutineService
         }
     }
 
+    public async Task<(IEnumerable<MaquinaResponse>? Maquinas, string? ErrorMessage)> GetMaquinasForRutinaAsync(int rutinaId)
+    {
+        _logger.LogInformation("Fetching required machines for Rutina ID: {RutinaId}", rutinaId);
+
+        var rutinaExists = await _context.Rutinas.AnyAsync(r => r.IdRutina == rutinaId);
+        if (!rutinaExists)
+        {
+            _logger.LogWarning("Rutina ID {RutinaId} not found.", rutinaId);
+            return (null, "Routine not found.");
+        }
+
+        try
+        {
+            // Obtener todos los los ejercicios de la rutinas que sean distintos
+            var ejercicioIdsEnRutina = await _context.RutinaDiaEjercicios
+                .Where(rde => rde.IdRutina == rutinaId)
+                .Select(rde => rde.IdEjercicio)
+                .Distinct()
+                .ToListAsync();
+
+            if (!ejercicioIdsEnRutina.Any())
+            {
+                _logger.LogInformation("Rutina ID {RutinaId} has no exercises assigned.", rutinaId);
+                return (new List<MaquinaResponse>(), null); // Return empty list
+            }
+            
+            var maquinasRequeridas = await _context.EjercicioMaquinas
+                .Where(em => ejercicioIdsEnRutina.Contains(em.IdEjercicio))
+                .Include(em => em.MaquinaEjercicio) 
+                .Select(em => em.MaquinaEjercicio)  
+                .Where(m => m != null)
+                .Distinct()
+                .Select(m => new MaquinaResponse 
+                {
+                    IdMaquina = m!.IdMaquina, 
+                    IdEspacio = m.IdEspacio,
+                    Nombre = m.Nombre,
+                    TipoMaquina = m.TipoMaquina,
+                    Descripcion = m.Descripcion,
+                    UrlImagen = m.UrlImagen,
+                    FechaAdquisicion = m.FechaAdquisicion,
+                    Estado = m.Estado,
+                    Reservable = m.Reservable,
+                    CodigoQrBase64 = m.CodigoQr != null ? Convert.ToBase64String(m.CodigoQr) : null
+                })
+                .ToListAsync();
+
+            // Alternative for RutinaMaquinaRequirementDto:
+            /*
+            var maquinasConDetalles = await _context.EjercicioMaquinas
+                .Where(em => ejercicioIdsEnRutina.Contains(em.IdEjercicio))
+                .Include(em => em.Ejercicio)
+                .Include(em => em.MaquinaEjercicio)
+                .Select(em => new RutinaMaquinaRequirementDto
+                {
+                    IdEjercicio = em.IdEjercicio,
+                    EjercicioNombre = em.Ejercicio != null ? em.Ejercicio.Nombre : "N/A",
+                    IdMaquina = em.IdMaquina,
+                    MaquinaNombre = em.MaquinaEjercicio != null ? em.MaquinaEjercicio.Nombre : "N/A",
+                    MaquinaUrlImagen = em.MaquinaEjercicio != null ? em.MaquinaEjercicio.UrlImagen : null,
+                    NotasUnion = em.Notas
+                })
+                .ToListAsync();
+            return (maquinasConDetalles, null);
+            */
+
+            _logger.LogInformation("Found {Count} unique machines required for Rutina ID {RutinaId}.", maquinasRequeridas.Count, rutinaId);
+            return (maquinasRequeridas, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching machines for Rutina ID {RutinaId}.", rutinaId);
+            return (null, "An error occurred while fetching required machines.");
+        }
+    }
+
     private static RutinaResponse MapToResponse(Rutina rutina)
     {
         return new RutinaResponse

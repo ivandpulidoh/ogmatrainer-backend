@@ -27,5 +27,7 @@ public class Ejercicio
     public string? UrlVideoDemostracion { get; set; }
 
     [Column("id_creador")]
-    public int? IdCreador { get; set; } // FK to Usuarios (not strictly enforced here)
+    public int? IdCreador { get; set; }
+
+    public virtual ICollection<EjercicioMaquina> MaquinasRequeridas { get; set; } = new List<EjercicioMaquina>();
 }

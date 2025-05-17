@@ -32,6 +32,22 @@ public class ExerciseService : IExerciseService
             return (null, $"An exercise with the name '{request.Nombre}' already exists.");
         }
 
+        if (request.MaquinasRequeridasIds != null && request.MaquinasRequeridasIds.Any())
+        {
+            var distinctRequestedMachineIds = request.MaquinasRequeridasIds.Distinct().ToList();
+            var existingMachineIds = await _context.MaquinasEjercicio
+                                               .Where(m => distinctRequestedMachineIds.Contains(m.IdMaquina))
+                                               .Select(m => m.IdMaquina)
+                                               .ToListAsync();
+
+            var missingMachineIds = distinctRequestedMachineIds.Except(existingMachineIds).ToList();
+            if (missingMachineIds.Any())
+            {
+                _logger.LogWarning("Cannot create exercise. Invalid or non-existent machine IDs provided: {MissingIds}", string.Join(", ", missingMachineIds));
+                return (null, $"The following machine IDs are invalid or do not exist: {string.Join(", ", missingMachineIds)}");
+            }
+        }
+
         var newExercise = new Ejercicio
         {
             Nombre = request.Nombre,
@@ -41,11 +57,32 @@ public class ExerciseService : IExerciseService
             IdCreador = creatorUserId
         };
 
+        using var transaction = await _context.Database.BeginTransactionAsync();
+
         try
         {
             _context.Ejercicios.Add(newExercise);
             await _context.SaveChangesAsync();
             _logger.LogInformation("Exercise {ExerciseName} created successfully with ID {ExerciseId}.", newExercise.Nombre, newExercise.IdEjercicio);
+
+            if (request.MaquinasRequeridasIds != null && request.MaquinasRequeridasIds.Any())
+            {
+                foreach (var machineId in request.MaquinasRequeridasIds.Distinct())
+                {
+                    var ejercicioMaquina = new EjercicioMaquina
+                    {
+                        IdEjercicio = newExercise.IdEjercicio,
+                        IdMaquina = machineId
+                    };
+                    _context.EjercicioMaquinas.Add(ejercicioMaquina);
+                }
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Linked exercise ID {ExerciseId} to {Count} machines.", newExercise.IdEjercicio, request.MaquinasRequeridasIds.Distinct().Count());
+            }
+
+            await transaction.CommitAsync(); // Commit transaction if all successful
+
+            _logger.LogInformation("Exercise {ExerciseName} and machine links created successfully with ID {ExerciseId}.", newExercise.Nombre, newExercise.IdEjercicio);
             return (MapToResponse(newExercise), null);
         }
         catch (DbUpdateException ex)
@@ -62,54 +99,101 @@ public class ExerciseService : IExerciseService
 
     public async Task<EjercicioResponse?> GetExerciseByIdAsync(int exerciseId)
     {
-        var exercise = await _context.Ejercicios.AsNoTracking().FirstOrDefaultAsync(e => e.IdEjercicio == exerciseId);
+        _logger.LogInformation("Fetching exercise by ID: {ExerciseId} with associated machines.", exerciseId);
+        var exercise = await _context.Ejercicios
+            .AsNoTracking()
+            .Include(e => e.MaquinasRequeridas)
+                .ThenInclude(em => em.MaquinaEjercicio)
+            .FirstOrDefaultAsync(e => e.IdEjercicio == exerciseId);
+
         return exercise == null ? null : MapToResponse(exercise);
     }
 
     public async Task<IEnumerable<EjercicioResponse>> GetAllExercisesAsync()
     {
-        return await _context.Ejercicios
+        _logger.LogInformation("Fetching all exercises with their associated machines.");
+        var exercises = await _context.Ejercicios
             .AsNoTracking()
-            .Select(e => MapToResponse(e))
+            .Include(e => e.MaquinasRequeridas)
+                .ThenInclude(em => em.MaquinaEjercicio)
+            .OrderBy(e => e.Nombre)
             .ToListAsync();
+
+        return exercises.Select(e => MapToResponse(e));
     }
 
     public async Task<(bool Success, string? ErrorMessage)> UpdateExerciseAsync(int exerciseId, UpdateEjercicioRequest request, int? updaterUserId)
     {
         _logger.LogInformation("Updating exercise with ID {ExerciseId} by User: {UpdaterId}", exerciseId, updaterUserId ?? 0);
-        var exercise = await _context.Ejercicios.FindAsync(exerciseId);
+        var exercise = await _context.Ejercicios
+                                .Include(e => e.MaquinasRequeridas) // Load existing associations
+                                .FirstOrDefaultAsync(e => e.IdEjercicio == exerciseId);
+
         if (exercise == null)
         {
             _logger.LogWarning("Exercise with ID {ExerciseId} not found for update.", exerciseId);
             return (false, "Exercise not found.");
         }
-               
+
         if (!string.IsNullOrEmpty(request.Nombre) && request.Nombre != exercise.Nombre)
         {
             if (await _context.Ejercicios.AnyAsync(e => e.IdEjercicio != exerciseId && e.Nombre == request.Nombre))
             {
-                 _logger.LogWarning("Another exercise with name {ExerciseName} already exists. Update failed for ID {ExerciseId}", request.Nombre, exerciseId);
+                _logger.LogWarning("Another exercise with name {ExerciseName} already exists. Update failed for ID {ExerciseId}", request.Nombre, exerciseId);
                 return (false, $"An exercise with the name '{request.Nombre}' already exists.");
             }
             exercise.Nombre = request.Nombre;
         }
-
-        // Update other properties (allow setting to null or empty if desired)
-        exercise.Descripcion = request.Descripcion; // Update even if null/empty to clear it
+        exercise.Descripcion = request.Descripcion;
         exercise.MusculoObjetivo = request.MusculoObjetivo;
         exercise.UrlVideoDemostracion = request.UrlVideoDemostracion;
-        // IdCreador is usually not updated unless by a super admin or specific logic
 
+        // --- Handle Machine Associations Update ---
+        if (request.MaquinasRequeridasIds != null) // If client provides the list, update associations
+        {
+            // Validate new machine IDs
+            var distinctRequestedMachineIds = request.MaquinasRequeridasIds.Distinct().ToList();
+            var existingValidMachineIdsInRequest = await _context.MaquinasEjercicio
+                                               .Where(m => distinctRequestedMachineIds.Contains(m.IdMaquina))
+                                               .Select(m => m.IdMaquina)
+                                               .ToListAsync();
+            var missingMachineIds = distinctRequestedMachineIds.Except(existingValidMachineIdsInRequest).ToList();
+            if (missingMachineIds.Any())
+            {
+                _logger.LogWarning("Cannot update exercise. Invalid or non-existent machine IDs provided for association: {MissingIds}", string.Join(", ", missingMachineIds));
+                return (false, $"The following machine IDs for association are invalid or do not exist: {string.Join(", ", missingMachineIds)}");
+            }
+
+            // Remove old associations not in the new list
+            var machineIdsToRemove = exercise.MaquinasRequeridas
+                                          .Select(em => em.IdMaquina)
+                                          .Except(existingValidMachineIdsInRequest)
+                                          .ToList();
+            if (machineIdsToRemove.Any())
+            {
+                var associationsToRemove = exercise.MaquinasRequeridas
+                                                .Where(em => machineIdsToRemove.Contains(em.IdMaquina))
+                                                .ToList();
+                _context.EjercicioMaquinas.RemoveRange(associationsToRemove);
+            }
+
+            // Add new associations
+            var currentAssociatedMachineIds = exercise.MaquinasRequeridas.Select(em => em.IdMaquina).ToList();
+            var machineIdsToAdd = existingValidMachineIdsInRequest.Except(currentAssociatedMachineIds).ToList();
+            if (machineIdsToAdd.Any())
+            {
+                foreach (var machineId in machineIdsToAdd)
+                {
+                    _context.EjercicioMaquinas.Add(new EjercicioMaquina { IdEjercicio = exerciseId, IdMaquina = machineId });
+                }
+            }
+        }
+        
         try
         {
             await _context.SaveChangesAsync();
             _logger.LogInformation("Exercise with ID {ExerciseId} updated successfully.", exerciseId);
             return (true, null);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            _logger.LogError(ex, "Concurrency error updating exercise {ExerciseId}.", exerciseId);
-            return (false, "Failed to update exercise due to a concurrency conflict.");
         }
         catch (DbUpdateException ex)
         {
@@ -120,7 +204,7 @@ public class ExerciseService : IExerciseService
 
     public async Task<(bool Success, string? ErrorMessage)> DeleteExerciseAsync(int exerciseId, int? deleterUserId)
     {
-        _logger.LogInformation("Deleting exercise with ID {ExerciseId} by User: {DeleterId}", exerciseId, deleterUserId ?? 0);
+         _logger.LogInformation("Deleting exercise with ID {ExerciseId} by User: {DeleterId}", exerciseId, deleterUserId ?? 0);
         var exercise = await _context.Ejercicios.FindAsync(exerciseId);
         if (exercise == null)
         {
@@ -129,17 +213,16 @@ public class ExerciseService : IExerciseService
         }
 
         try
-        {
+        {            
             _context.Ejercicios.Remove(exercise);
             await _context.SaveChangesAsync();
             _logger.LogInformation("Exercise with ID {ExerciseId} deleted successfully.", exerciseId);
             return (true, null);
         }
-        // Catch DbUpdateException for FK constraint violations (e.g., if exercise is in use in RutinaDiaEjercicios)
         catch (DbUpdateException ex)
         {
             _logger.LogError(ex, "Database error deleting exercise {ExerciseId}. It might be in use.", exerciseId);
-            return (false, "Failed to delete exercise. It might be in use in existing routines.");
+            return (false, "Failed to delete exercise. It might be in use in existing routines or other records not handled by cascade.");
         }
     }
 
@@ -152,7 +235,16 @@ public class ExerciseService : IExerciseService
             Descripcion = exercise.Descripcion,
             MusculoObjetivo = exercise.MusculoObjetivo,
             UrlVideoDemostracion = exercise.UrlVideoDemostracion,
-            IdCreador = exercise.IdCreador
+            IdCreador = exercise.IdCreador,
+            MaquinasAsociadas = exercise.MaquinasRequeridas?
+                .Select(em => em.MaquinaEjercicio)
+                .Where(m => m != null)
+                .Select(m => new SimpleMaquinaDto
+                {
+                    IdMaquina = m!.IdMaquina,
+                    Nombre = m.Nombre,
+                    UrlImagen = m.UrlImagen
+                }).ToList() ?? new List<SimpleMaquinaDto>()
         };
     }
 }

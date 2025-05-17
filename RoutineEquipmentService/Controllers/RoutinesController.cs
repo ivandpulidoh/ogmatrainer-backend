@@ -27,7 +27,7 @@ public class RoutinesController : ControllerBase
         var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out var userId))
         {
-            _logger.LogWarning("User ID claim not found or invalid.");          
+            _logger.LogWarning("User ID claim not found or invalid.");
             throw new UnauthorizedAccessException("User ID claim is missing, invalid, or user is not properly authenticated.");
         }
         return userId;
@@ -100,7 +100,7 @@ public class RoutinesController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-             return Unauthorized(new ProblemDetails { Title = "Unauthorized", Detail = ex.Message, Status = StatusCodes.Status401Unauthorized });
+            return Unauthorized(new ProblemDetails { Title = "Unauthorized", Detail = ex.Message, Status = StatusCodes.Status401Unauthorized });
         }
 
         var (success, errorMessage) = await _routineService.UpdateRoutineAsync(rutinaId, request, updaterUserId);
@@ -148,5 +148,26 @@ public class RoutinesController : ControllerBase
                 return Forbid();
         }
         return BadRequest(new ProblemDetails { Title = "Deletion Failed", Detail = errorMessage });
+    }
+
+    // GET api/routines/{rutinaId}/required-machines
+    [HttpGet("{rutinaId:int}/required-machines")]
+    [ProducesResponseType(typeof(IEnumerable<MaquinaResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetRequiredMachinesForRoutine(int rutinaId)
+    {
+        var (maquinas, errorMessage) = await _routineService.GetMaquinasForRutinaAsync(rutinaId);
+
+        if (errorMessage != null)
+        {
+            if (errorMessage.Contains("not found"))
+            {
+                return NotFound(new ProblemDetails { Title = "Not Found", Detail = errorMessage, Status = StatusCodes.Status404NotFound });
+            }
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails { Title = "Error", Detail = errorMessage, Status = StatusCodes.Status500InternalServerError });
+        }
+
+        return Ok(maquinas);
     }
 }
