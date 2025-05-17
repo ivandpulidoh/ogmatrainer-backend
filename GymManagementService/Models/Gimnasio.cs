@@ -29,7 +29,7 @@ namespace GymManagementService.Models
         public byte[]? CodigoQrSalida { get; set; }
 
         [Column("fomulario_obligatorio")]
-        public bool FormularioObligatorio { get; set; }
+        public bool? FormularioObligatorio { get; set; }
 
         public virtual ICollection<HorarioGimnasio>? Horarios { get; set; }
         public virtual ICollection<GimnasioAdministrador>? Administradores { get; set; }
