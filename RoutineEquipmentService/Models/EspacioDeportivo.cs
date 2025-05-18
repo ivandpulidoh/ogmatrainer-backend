@@ -11,7 +11,7 @@ public class EspacioDeportivo
     public int IdEspacio { get; set; }
 
     [Column("id_gimnasio")]
-    public int IdGimnasio { get; set; } // Assuming you'll handle Gym creation elsewhere
+    public int IdGimnasio { get; set; }
 
     [Required]
     [MaxLength(100)]
@@ -26,4 +26,6 @@ public class EspacioDeportivo
 
     [Column("reservable")]
     public bool Reservable { get; set; } = true;
+
+     public virtual ICollection<MaquinaEjercicio> MaquinasEnEspacio { get; set; } = new List<MaquinaEjercicio>();
 }

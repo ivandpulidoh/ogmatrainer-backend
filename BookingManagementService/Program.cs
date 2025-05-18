@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using BookingManagementService.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,8 +18,9 @@ var jwtKey = configuration["Jwt:Key"];
 var jwtIssuer = configuration["Jwt:Issuer"];
 var jwtAudience = configuration["Jwt:Audience"];
 
-if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer) || string.IsNullOrEmpty(jwtAudience)) {
-     throw new InvalidOperationException("JWT settings (Key, Issuer, Audience) must be configured in appsettings.");
+if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer) || string.IsNullOrEmpty(jwtAudience))
+{
+    throw new InvalidOperationException("JWT settings (Key, Issuer, Audience) must be configured in appsettings.");
 }
 
 // 2. Authentication
@@ -55,6 +57,34 @@ builder.Services.AddSwaggerGen();
 // 3. Configure DbContext
 builder.Services.AddDbContext<BookingDbContext>(options =>
     options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+
+builder.Services.AddHttpContextAccessor(); 
+
+builder.Services.AddHttpClient("RoutineEquipmentServiceClient", (serviceProvider, client) =>
+{
+
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var httpContextAccessor = serviceProvider.GetRequiredService<IHttpContextAccessor>();
+
+    var baseUrl = configuration["RoutineEquipmentService:BaseUrl"];
+    if (!string.IsNullOrEmpty(baseUrl))
+    {
+        client.BaseAddress = new Uri(baseUrl);
+    }
+
+    client.DefaultRequestHeaders.Accept.Clear();
+    client.DefaultRequestHeaders.Accept.Add(
+        new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+
+    var authorizationHeader = httpContextAccessor.HttpContext?.Request.Headers["Authorization"].FirstOrDefault();
+    if (!string.IsNullOrEmpty(authorizationHeader) && authorizationHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authorizationHeader);
+    }
+
+});
+builder.Services.AddScoped<IRoutineEquipmentServiceClient, RoutineEquipmentHttpClientService>();
 
 // 4. Configure HttpClient for Notification Service
 builder.Services.AddHttpClient("NotificationServiceClient", client =>

@@ -17,19 +17,20 @@ if (string.IsNullOrEmpty(jwtKey) || string.IsNullOrEmpty(jwtIssuer) || string.Is
      throw new InvalidOperationException("JWT settings (Key, Issuer, Audience) must be configured in appsettings.");
 }
 
-// Add services to the container.
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(); // Configure for JWT later if needed
+builder.Services.AddSwaggerGen();
 
 // DbContext
 builder.Services.AddDbContext<RoutineEquipmentDbContext>(options =>
     options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
-// HTTP Client for External QR Service
+
 builder.Services.AddHttpClient("ExternalQrClient"); // Register a client for the QR service
 
-// Custom Services
+
+builder.Services.AddScoped<IEspacioService, EspacioService>();
 builder.Services.AddScoped<IExternalQrCodeService, ExternalQrCodeHttpService>();
 builder.Services.AddScoped<IEquipmentService, EquipmentService>();
 builder.Services.AddScoped<IExerciseService, ExerciseService>();

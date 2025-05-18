@@ -6,7 +6,7 @@ using System.Collections.Generic; // For List/IEnumerable
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization; // For [Authorize]
 using Microsoft.AspNetCore.Http; // For IHttpContextAccessor
-using System.Net.Http.Headers; 
+using System.Net.Http.Headers;
 using GymManagementService.DTOs;
 using GymManagementService.Models.Settings;
 using Microsoft.Extensions.Options;
@@ -20,7 +20,7 @@ namespace GymManagementService.Controllers
     {
         private readonly GymDbContext _context;
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly ExternalApiSettings _apiSettings;   
+        private readonly ExternalApiSettings _apiSettings;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
         public GymsController(GymDbContext context, IHttpClientFactory httpClientFactory, IOptions<ExternalApiSettings> apiSettings, IHttpContextAccessor httpContextAccessor)
@@ -88,22 +88,22 @@ namespace GymManagementService.Controllers
             await _context.SaveChangesAsync(); // Save changes to the database
 
             if (string.IsNullOrWhiteSpace(_apiSettings.QrCodeGeneratorBaseUrl))
-            {                
+            {
                 return StatusCode(StatusCodes.Status500InternalServerError, "QR Code generator URL is not configured.");
             }
-        
+
             string? accessToken = _httpContextAccessor.HttpContext?.Request.Headers["Authorization"]
                                     .FirstOrDefault()?.Split(" ").LastOrDefault();
 
             if (string.IsNullOrEmpty(accessToken))
-            {                
+            {
                 return Unauthorized("Authorization token not found in the request to this service.");
             }
 
-            var httpClient = _httpClientFactory.CreateClient(); 
+            var httpClient = _httpClientFactory.CreateClient();
 
             httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", accessToken);           
+                new AuthenticationHeaderValue("Bearer", accessToken);
 
             string encodedGymId = HttpUtility.UrlEncode(gimnasio.IdGimnasio.ToString());
             string encodedGymName = HttpUtility.UrlEncode(gimnasio.Nombre);
@@ -172,12 +172,12 @@ namespace GymManagementService.Controllers
                 return BadRequest("ID mismatch between route parameter and request body.");
             }
 
-             // Check if gym with the updated name already exists (and it's not the current gym)
-             if (await _context.Gimnasios.AnyAsync(g => g.Nombre == gimnasio.Nombre && g.IdGimnasio != id))
-             {
-                 ModelState.AddModelError("Nombre", $"Another gym with the name '{gimnasio.Nombre}' already exists.");
-                 return Conflict(ModelState); // 409 Conflict
-             }
+            // Check if gym with the updated name already exists (and it's not the current gym)
+            if (await _context.Gimnasios.AnyAsync(g => g.Nombre == gimnasio.Nombre && g.IdGimnasio != id))
+            {
+                ModelState.AddModelError("Nombre", $"Another gym with the name '{gimnasio.Nombre}' already exists.");
+                return Conflict(ModelState); // 409 Conflict
+            }
 
 
             _context.Entry(gimnasio).State = EntityState.Modified; // Mark the entity as modified
@@ -227,8 +227,8 @@ namespace GymManagementService.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> AddAdminToGym(int gymId, [FromBody] UserIdRequestDto request)
-        {   
-            if (!ModelState.IsValid) 
+        {
+            if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
@@ -236,7 +236,7 @@ namespace GymManagementService.Controllers
             int userId = request.UserId;
 
             if (!await GimnasioExistsAsync(gymId))
-                return NotFound($"Gym with ID {gymId} not found.");           
+                return NotFound($"Gym with ID {gymId} not found.");
 
             var association = new GimnasioAdministrador { IdGimnasio = gymId, IdUsuario = userId };
 
@@ -259,8 +259,8 @@ namespace GymManagementService.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> RemoveAdminFromGym(int gymId, int userId)
         {
-             var association = await _context.GimnasioAdministradores
-                .FirstOrDefaultAsync(ga => ga.IdGimnasio == gymId && ga.IdUsuario == userId);
+            var association = await _context.GimnasioAdministradores
+               .FirstOrDefaultAsync(ga => ga.IdGimnasio == gymId && ga.IdUsuario == userId);
 
             if (association == null)
             {
@@ -289,7 +289,7 @@ namespace GymManagementService.Controllers
             int userId = request.UserId;
 
             if (!await GimnasioExistsAsync(gymId))
-                return NotFound($"Gym with ID {gymId} not found.");                       
+                return NotFound($"Gym with ID {gymId} not found.");
 
             var association = new EntrenadorGimnasio { IdGimnasio = gymId, IdUsuario = userId };
 
@@ -309,8 +309,8 @@ namespace GymManagementService.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> RemoveTrainerFromGym(int gymId, int userId)
         {
-             var association = await _context.EntrenadorGimnasios
-                .FirstOrDefaultAsync(eg => eg.IdGimnasio == gymId && eg.IdUsuario == userId);
+            var association = await _context.EntrenadorGimnasios
+               .FirstOrDefaultAsync(eg => eg.IdGimnasio == gymId && eg.IdUsuario == userId);
 
             if (association == null)
             {
@@ -350,26 +350,42 @@ namespace GymManagementService.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult<IEnumerable<int>>> GetGymAdministrators(int gymId)
         {
-            
+
             if (!await GimnasioExistsAsync(gymId))
             {
                 return NotFound($"Gym with ID {gymId} not found.");
             }
 
-           
-            var adminIds = await _context.GimnasioAdministradores
-                                     .Where(ga => ga.IdGimnasio == gymId) 
-                                     .Select(ga => ga.IdUsuario)       
-                                     .ToListAsync();                     
 
-            
+            var adminIds = await _context.GimnasioAdministradores
+                                     .Where(ga => ga.IdGimnasio == gymId)
+                                     .Select(ga => ga.IdUsuario)
+                                     .ToListAsync();
+
+
             return Ok(adminIds);
         }
-        
+
+        [HttpGet("by-user/{userId}")]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<object>> GetGymByAdminId(int userId)
+        {
+            var association = await _context.GimnasioAdministradores
+                .FirstOrDefaultAsync(ga => ga.IdUsuario == userId);
+
+            if (association == null)
+            {
+                return NotFound($"No gym found for user with ID {userId}.");
+            }
+
+            return Ok(new { idGimnasio = association.IdGimnasio });
+        }
+
         private async Task<bool> GimnasioExistsAsync(int id)
         {
             return await _context.Gimnasios.AnyAsync(e => e.IdGimnasio == id);
         }
-        
+
     }
 }

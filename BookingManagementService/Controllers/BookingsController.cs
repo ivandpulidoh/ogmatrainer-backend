@@ -240,6 +240,60 @@ public class BookingsController : ControllerBase
          return MapCancellationResult(result);
     }
 
+    [HttpPost("routines/book-day")]
+    [ProducesResponseType(typeof(RoutineDayBookingResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> BookRoutineDay([FromBody] BookRoutineDayRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }     
+
+        var (response, errorMessage) = await _bookingService.BookRoutineDayAsync(request);
+
+        if (response != null)
+        {
+            return Ok(response);
+        }
+        
+        if (errorMessage != null)
+        {
+            if (errorMessage.Contains("not found") || errorMessage.Contains("Could not retrieve"))
+            {
+                return NotFound(new ProblemDetails { Title = "Resource Not Found", Detail = errorMessage, Status = StatusCodes.Status404NotFound });
+            }
+            if (errorMessage.Contains("Failed to find an available machine") || errorMessage.Contains("No exercises found"))
+            {
+                 return Conflict(new ProblemDetails { Title = "Booking Conflict", Detail = errorMessage, Status = StatusCodes.Status409Conflict });
+            }
+        }
+        return BadRequest(new ProblemDetails { Title = "Booking Failed", Detail = errorMessage ?? "An unknown error occurred.", Status = StatusCodes.Status400BadRequest });
+    }
+
+    [HttpPost("routines/validate-availability")]
+    [ProducesResponseType(typeof(RoutineDayAvailabilityResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ValidateRoutineDayAvailability([FromBody] ValidateRoutineDayAvailabilityRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var response = await _bookingService.ValidateRoutineDayAvailabilityAsync(request);
+
+        if (response.Message.Contains("could not be fetched"))
+        {
+             return NotFound(new ProblemDetails { Title = "Resource Not Found", Detail = response.Message, Status = StatusCodes.Status404NotFound});
+        }
+
+        return Ok(response);
+    }
+
     // --- Helper to map CancellationResult enum to IActionResult ---
     private IActionResult MapCancellationResult(CancellationResult result)
     {
@@ -252,12 +306,12 @@ public class BookingsController : ControllerBase
             case CancellationResult.Forbidden:
                 return Forbid(); // Returns 403
             case CancellationResult.Conflict:
-                 // Providing a message for Conflict is often helpful
+                // Providing a message for Conflict is often helpful
                 return Conflict(new { message = "Cannot cancel the reservation/registration due to its current state or business rules." });
             default:
-                 // Should not happen
-                 _logger.LogError("Unhandled CancellationResult: {Result}", result);
-                 return StatusCode(StatusCodes.Status500InternalServerError);
+                // Should not happen
+                _logger.LogError("Unhandled CancellationResult: {Result}", result);
+                return StatusCode(StatusCodes.Status500InternalServerError);
         }
     }
 }

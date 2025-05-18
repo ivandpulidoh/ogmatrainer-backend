@@ -29,4 +29,6 @@ public interface IBookingService
     Task<CancellationResult> CancelMachineReservationAsync(int reservationId, int requestingUserId);
     Task<CancellationResult> CancelTrainerReservationAsync(int reservationId, int requestingUserId, bool isAdmin);
     Task<CancellationResult> CancelClassRegistrationAsync(int registrationId, int requestingUserId, bool isAdmin);
+    Task<(RoutineDayBookingResponse? Response, string? ErrorMessage)> BookRoutineDayAsync(BookRoutineDayRequest request);
+    Task<RoutineDayAvailabilityResponse> ValidateRoutineDayAvailabilityAsync(ValidateRoutineDayAvailabilityRequest request);
 }

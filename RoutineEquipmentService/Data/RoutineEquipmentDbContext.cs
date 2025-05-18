@@ -12,18 +12,18 @@ public class RoutineEquipmentDbContext : DbContext
     public DbSet<RutinaDiaEjercicio> RutinaDiaEjercicios { get; set; } = null!;
     public DbSet<EspacioDeportivo> EspaciosDeportivos { get; set; } = null!;
     public DbSet<MaquinaEjercicio> MaquinasEjercicio { get; set; } = null!;
-    public DbSet<Clase> Clases { get; set; } = null!;    
+    public DbSet<Clase> Clases { get; set; } = null!;
     public DbSet<EjercicioMaquina> EjercicioMaquinas { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // Define composite unique key for RutinaDiaEjercicios if not implicitly handled by your DB schema script
+    
         modelBuilder.Entity<RutinaDiaEjercicio>()
             .HasIndex(rde => new { rde.IdRutina, rde.DiaNumero, rde.OrdenEnDia })
             .IsUnique()
-            .HasDatabaseName("UK_RutinaDia_Orden"); // Match DB constraint name
+            .HasDatabaseName("UK_RutinaDia_Orden");
 
         modelBuilder.Entity<Ejercicio>()
             .HasIndex(e => e.Nombre)
@@ -35,19 +35,25 @@ public class RoutineEquipmentDbContext : DbContext
             .HasDefaultValueSql("GETUTCDATE()");
 
         modelBuilder.Entity<EjercicioMaquina>()
-            .HasKey(em => new { em.IdEjercicio, em.IdMaquina });  
+            .HasKey(em => new { em.IdEjercicio, em.IdMaquina });
 
         modelBuilder.Entity<EjercicioMaquina>()
             .HasOne(em => em.Ejercicio)
-            .WithMany(e => e.MaquinasRequeridas) // Add this navigation property to Ejercicio
+            .WithMany(e => e.MaquinasRequeridas)
             .HasForeignKey(em => em.IdEjercicio)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<EjercicioMaquina>()
             .HasOne(em => em.MaquinaEjercicio)
-            .WithMany(m => m.EjerciciosAsociados) // Add this navigation property to MaquinaEjercicio
+            .WithMany(m => m.EjerciciosAsociados)
             .HasForeignKey(em => em.IdMaquina)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<EspacioDeportivo>()
+            .HasMany(e => e.MaquinasEnEspacio)
+            .WithOne(m => m.EspacioDeportivo)
+            .HasForeignKey(m => m.IdEspacio)
+            .OnDelete(DeleteBehavior.Restrict);
 
     }
 }
