@@ -3,6 +3,7 @@ namespace MembershipService.DTOs
     public class TipoMembresiaDto
     {
         public int IdTipoMembresia { get; set; }
+        public int IdGimnasio { get; set; }
         public string Nombre { get; set; } = string.Empty;
         public string? Descripcion { get; set; }
         public int DuracionMeses { get; set; }
@@ -12,6 +13,7 @@ namespace MembershipService.DTOs
 
     public class CreateTipoMembresiaDto
     {
+        public int? IdGimnasio { get; set; }
         public string Nombre { get; set; } = string.Empty;
         public string? Descripcion { get; set; }
         public int DuracionMeses { get; set; }
@@ -20,8 +22,8 @@ namespace MembershipService.DTOs
     }
 
     public class UpdateTipoMembresiaDto
-    {
-        public string? Nombre { get; set; } // Opcional para actualizar
+    {        
+        public string? Nombre { get; set; }
         public string? Descripcion { get; set; }
         public int? DuracionMeses { get; set; }
         public decimal? Precio { get; set; }

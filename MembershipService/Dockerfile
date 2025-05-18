@@ -4,20 +4,20 @@ WORKDIR /source
 
 # ===>>> CHANGE 1: Copy ONLY the specific .csproj file first <<<===
 # Replace 'YourMicroserviceName.csproj' with the actual project file name
-COPY GymManagementService.csproj .
+COPY MembershipService.csproj .
 
 # ===>>> CHANGE 2: Restore specifically for this project <<<===
-RUN dotnet restore GymManagementService.csproj --use-current-runtime
+RUN dotnet restore MembershipService.csproj --runtime linux-musl-x64
 
 COPY . .
 
 # ===>>> CHANGE 3: Publish specifically this project <<<===
-RUN dotnet publish GymManagementService.csproj -c Release -o /app/publish --no-restore --use-current-runtime
+RUN dotnet publish MembershipService.csproj -c Release -o /app/publish --runtime linux-musl-x64 --no-self-contained
 
 # Stage 2: Create the runtime image (remains the same)
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
 COPY --from=build /app/publish .
-EXPOSE 5277
-ENTRYPOINT ["dotnet", "GymManagementService.dll"]
+EXPOSE 5202
+ENTRYPOINT ["dotnet", "MembershipService.dll"]

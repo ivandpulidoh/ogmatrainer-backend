@@ -10,6 +10,9 @@ namespace MembershipService.Models
         [Column("id_tipo_membresia")]
         public int IdTipoMembresia { get; set; }
 
+        [Column("id_gimnasio")]
+        public int IdGimnasio { get; set; }
+
         [Required]
         [StringLength(100)]
         public string Nombre { get; set; } = string.Empty;
@@ -24,8 +27,7 @@ namespace MembershipService.Models
         public decimal Precio { get; set; }
 
         public bool Activo { get; set; } = true;
-
-        // Navegación (opcional, si quieres acceder a membresías desde el tipo)
+       
         public virtual ICollection<Membresia> Membresias { get; set; } = new List<Membresia>();
     }
 }
