@@ -289,6 +289,33 @@ public class RoutineService : IRoutineService
         }
     }
 
+    public async Task<RutinaDiaEjercicioResponse?> GetRutinaDiaEjercicioByIdAsync(int idRutinaDiaEjercicio)
+    {
+        _logger.LogInformation("Fetching RutinaDiaEjercicio by ID: {IdRutinaDiaEjercicio}", idRutinaDiaEjercicio);
+        var rde = await _context.RutinaDiaEjercicios
+            .AsNoTracking()
+            .Include(r => r.Ejercicio)            
+            .FirstOrDefaultAsync(r => r.IdRutinaDiaEjercicio == idRutinaDiaEjercicio);
+
+        if (rde == null)
+        {
+            return null;
+        }
+        
+        return new RutinaDiaEjercicioResponse
+        {
+            IdRutinaDiaEjercicio = rde.IdRutinaDiaEjercicio,
+            DiaNumero = rde.DiaNumero,
+            IdEjercicio = rde.IdEjercicio,
+            EjercicioNombre = rde.Ejercicio?.Nombre ?? "Ejercicio no encontrado",
+            OrdenEnDia = rde.OrdenEnDia,
+            Series = rde.Series,
+            Repeticiones = rde.Repeticiones,
+            DescansoSegundos = rde.DescansoSegundos,
+            NotasEjercicio = rde.NotasEjercicio            
+        };
+    }
+
     private static RutinaResponse MapToResponse(Rutina rutina)
     {
         return new RutinaResponse

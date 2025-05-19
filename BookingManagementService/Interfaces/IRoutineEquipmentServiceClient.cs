@@ -7,4 +7,5 @@ public interface IRoutineEquipmentServiceClient
 {
     Task<ExternalRoutineDto?> GetRoutineByIdAsync(int routineId);
     Task<ExternalExerciseDto?> GetExerciseByIdAsync(int exerciseId);
+    Task<ExternalRutinaDiaEjercicioDto?> GetRutinaDiaEjercicioByIdAsync(int idRutinaDiaEjercicio);
 }

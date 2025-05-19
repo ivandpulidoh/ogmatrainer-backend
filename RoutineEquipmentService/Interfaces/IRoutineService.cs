@@ -9,4 +9,5 @@ public interface IRoutineService
     Task<(bool Success, string? ErrorMessage)> UpdateRoutineAsync(int rutinaId, UpdateRutinaRequest request, int updaterUserId);
     Task<(bool Success, string? ErrorMessage)> DeleteRoutineAsync(int rutinaId, int deleterUserId);
     Task<(IEnumerable<MaquinaResponse>? Maquinas, string? ErrorMessage)> GetMaquinasForRutinaAsync(int rutinaId);
+    Task<RutinaDiaEjercicioResponse?> GetRutinaDiaEjercicioByIdAsync(int idRutinaDiaEjercicio);
 }

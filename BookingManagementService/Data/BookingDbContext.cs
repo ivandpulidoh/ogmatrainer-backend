@@ -13,7 +13,8 @@ public class BookingDbContext : DbContext
     public DbSet<ReservaMaquina> ReservasMaquinas { get; set; } = null!;
     public DbSet<ReservaEntrenador> ReservasEntrenador { get; set; } = null!;
     public DbSet<InscripcionClase> InscripcionesClases { get; set; } = null!;
-    // Add DbSet for ReservasEspacios if needed
+    public DbSet<RutinaReserva> RutinaReservas { get; set; } = null!;
+    
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

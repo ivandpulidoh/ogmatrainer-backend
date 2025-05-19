@@ -1,4 +1,5 @@
 using BookingManagementService.Models;
+using BookingManagementService.Models.External;
 using BookingManagementService.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -164,6 +165,28 @@ public class BookingsController : ControllerBase
 
          var bookings = await _bookingService.GetAllBookingsForDayAsync(parsedDate);
         return Ok(bookings);
+    }
+
+    // GET api/bookings/machine-reservations/{idReservaMaquina}/routine-day-exercise
+    [HttpGet("machine-reservations/{idReservaMaquina:int}/routine-day-exercise")] // Renamed for clarity
+    [ProducesResponseType(typeof(ExternalRutinaDiaEjercicioDto), StatusCodes.Status200OK)] // <<< CHANGED RESPONSE TYPE
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetRoutineDayExerciseForMachineReservation(int idReservaMaquina)
+    {
+        var (routineDayExercise, errorMessage) = await _bookingService.GetRoutineDayExerciseForMachineReservationAsync(idReservaMaquina);
+
+        if (routineDayExercise != null)
+        {
+            return Ok(routineDayExercise);
+        }
+
+        if (errorMessage != null && (errorMessage.Contains("No routine day exercise is associated") || errorMessage.Contains("not found")))
+        {
+            return NotFound(new ProblemDetails { Title = "Not Found", Detail = errorMessage, Status = StatusCodes.Status404NotFound });
+        }
+
+        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails { Title = "Error", Detail = errorMessage ?? "An unexpected error occurred.", Status = StatusCodes.Status500InternalServerError });
     }
 
     // DELETE api/bookings/machines/{reservationId}

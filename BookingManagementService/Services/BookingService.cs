@@ -14,7 +14,7 @@ public class BookingService : IBookingService
     private readonly ILogger<BookingService> _logger;
     private readonly INotificationService _notificationService;
     private readonly IRoutineEquipmentServiceClient _routineEquipmentClient;
-     private readonly int _defaultExerciseDurationMinutes;
+    private readonly int _defaultExerciseDurationMinutes;
     private readonly int _machineTransitionGapMinutes;
 
     public BookingService(
@@ -31,21 +31,21 @@ public class BookingService : IBookingService
         _defaultExerciseDurationMinutes = configuration.GetValue<int>("BookingSettings:ExerciseDurationMinutes", 15);
         _machineTransitionGapMinutes = configuration.GetValue<int>("BookingSettings:MachineTransitionGapMinutes", 5);
     }
-    
+
     private int EstimateExerciseDuration(ExternalRutinaDiaEjercicioDto exerciseDetails)
     {
         // Basic estimation: 3 sets * (1 min per set + 1 min rest) = 6 mins
         // More sophisticated: parse series/reps, add rest
-        int sets = 3; // Default
-        if (!string.IsNullOrEmpty(exerciseDetails.Series) && int.TryParse(exerciseDetails.Series.Split('x').First().Trim(), out int parsedSets))
-        {
-            sets = parsedSets;
-        }
-        int restSeconds = exerciseDetails.DescansoSegundos ?? 60;
+        //int sets = 3; // Default
+        //if (!string.IsNullOrEmpty(exerciseDetails.Series) && int.TryParse(exerciseDetails.Series.Split('x').First().Trim(), out int parsedSets))
+        //{
+        //    sets = parsedSets;
+        //}
+        //int restSeconds = exerciseDetails.DescansoSegundos ?? 60;
         // Rough estimate: 30-60s per set execution + rest
-        return (int)Math.Ceiling((double)sets * (60 + restSeconds) / 60.0); // Duration in minutes
+        //return (int)Math.Ceiling((double)sets * (60 + restSeconds) / 60.0); // Duration in minutes
         // Fallback if estimation is hard
-        // return _defaultExerciseDurationMinutes;
+        return _defaultExerciseDurationMinutes;
     }
 
     private async Task<bool> IsMachineAvailableAsync(int machineId, DateTime slotStart, DateTime slotEnd)
@@ -96,8 +96,12 @@ public class BookingService : IBookingService
         {
             if (exerciseInRoutine.IdEjercicio <= 0 || string.IsNullOrEmpty(exerciseInRoutine.EjercicioNombre))
             {
-                 response.ExerciseAvailabilities.Add(new ExerciseMachineAvailability {
-                    ExerciseId = exerciseInRoutine.IdEjercicio, ExerciseName = "Unknown Exercise", IsAvailable = false, ReasonIfNotAvailable = "Invalid exercise data from routine service."
+                response.ExerciseAvailabilities.Add(new ExerciseMachineAvailability
+                {
+                    ExerciseId = exerciseInRoutine.IdEjercicio,
+                    ExerciseName = "Unknown Exercise",
+                    IsAvailable = false,
+                    ReasonIfNotAvailable = "Invalid exercise data from routine service."
                 });
                 response.IsOverallAvailable = false;
                 continue;
@@ -106,8 +110,12 @@ public class BookingService : IBookingService
             var exerciseDetails = await _routineEquipmentClient.GetExerciseByIdAsync(exerciseInRoutine.IdEjercicio);
             if (exerciseDetails == null || exerciseDetails.MaquinasAsociadas == null || !exerciseDetails.MaquinasAsociadas.Any())
             {
-                response.ExerciseAvailabilities.Add(new ExerciseMachineAvailability {
-                    ExerciseId = exerciseInRoutine.IdEjercicio, ExerciseName = exerciseInRoutine.EjercicioNombre, IsAvailable = false, ReasonIfNotAvailable = "No machines associated with this exercise or exercise details not found."
+                response.ExerciseAvailabilities.Add(new ExerciseMachineAvailability
+                {
+                    ExerciseId = exerciseInRoutine.IdEjercicio,
+                    ExerciseName = exerciseInRoutine.EjercicioNombre,
+                    IsAvailable = false,
+                    ReasonIfNotAvailable = "No machines associated with this exercise or exercise details not found."
                 });
                 response.IsOverallAvailable = false;
                 continue;
@@ -139,27 +147,28 @@ public class BookingService : IBookingService
 
             if (!machineFoundForExercise)
             {
-                response.ExerciseAvailabilities.Add(new ExerciseMachineAvailability {
+                response.ExerciseAvailabilities.Add(new ExerciseMachineAvailability
+                {
                     ExerciseId = exerciseInRoutine.IdEjercicio,
                     ExerciseName = exerciseInRoutine.EjercicioNombre,
                     IsAvailable = false,
                     ReasonIfNotAvailable = $"All associated machines booked from {currentSlotStartTime.ToLocalTime():t} to {currentSlotEndTime.ToLocalTime():t}."
                 });
-                response.IsOverallAvailable = false;                
+                response.IsOverallAvailable = false;
                 break;
             }
         }
 
         if (response.IsOverallAvailable)
         {
-            response.Message = "All exercises for the routine day appear to be available at the specified start time or slightly adjusted.";
+            response.Message = "Todos los ejercicios para la rutina diaria aparecen disponibles a la hora de inicio especificada o ligeramente ajustados.";
             response.ActualPossibleStartTime = actualPossibleOverallStartTime ?? request.DesiredStartDateTime;
         }
         else
         {
             if (string.IsNullOrEmpty(response.Message) || response.Message == "Availability check in progress.")
             {
-                response.Message = "One or more machines required for the routine are not available. Please try a different start time or date.";
+                response.Message = "Una o más máquinas requeridas para la rutina no están disponibles. Intente con otra hora o fecha de inicio.";
             }
         }
         return response;
@@ -186,7 +195,7 @@ public class BookingService : IBookingService
         {
             return (null, $"No exercises found for Day {request.DiaNumero} of Routine {request.RoutineId}.");
         }
-        
+
         var bookedMachineSummaries = new List<RoutineDayBookingSummary>();
         DateTime currentPlannedStartTime = request.StartDateTime.ToUniversalTime();
 
@@ -196,9 +205,10 @@ public class BookingService : IBookingService
         {
             foreach (var exerciseInRoutine in exercisesForDay)
             {
-                if(exerciseInRoutine.IdEjercicio <= 0 || string.IsNullOrEmpty(exerciseInRoutine.EjercicioNombre)) {
+                if (exerciseInRoutine.IdEjercicio <= 0 || string.IsNullOrEmpty(exerciseInRoutine.EjercicioNombre))
+                {
                     _logger.LogWarning("Skipping invalid exercise data from routine service: {@ExerciseData}", exerciseInRoutine);
-                    continue; // Skip malformed exercise data
+                    continue;
                 }
 
                 var exerciseDetails = await _routineEquipmentClient.GetExerciseByIdAsync(exerciseInRoutine.IdEjercicio);
@@ -242,7 +252,8 @@ public class BookingService : IBookingService
                             MachineName = selectedMachineName,
                             ReservationId = machineReservation.IdReservaMaquina,
                             ReservedStartTime = currentPlannedStartTime,
-                            ReservedEndTime = plannedEndTime
+                            ReservedEndTime = plannedEndTime,
+                            IdRutinaDiaEjercicio = exerciseInRoutine.IdRutinaDiaEjercicio
                         });
 
                         currentPlannedStartTime = plannedEndTime.AddMinutes(_machineTransitionGapMinutes); //agregar el tiempo del siguiente ejercicio
@@ -258,11 +269,32 @@ public class BookingService : IBookingService
                     await transaction.RollbackAsync();
                     _logger.LogError("Could not find an available machine for Exercise '{ExerciseName}' (ID: {ExerciseId}) starting around {StartTime}",
                         exerciseInRoutine.EjercicioNombre, exerciseInRoutine.IdEjercicio, currentPlannedStartTime.ToLocalTime());
-                    return (null, $"Failed to find an available machine for exercise '{exerciseInRoutine.EjercicioNombre}'. Routine booking cancelled.");
+                    return (null, $"No se pudo encontrar una máquina disponible para hacer ejercicio '{exerciseInRoutine.EjercicioNombre}'. Reserva de rutina cancelada.");
                 }
             }
 
+            if (bookedMachineSummaries.Any())
+            {
+                _logger.LogInformation("Creating RutinaReservas links for {Count} booked machines.", bookedMachineSummaries.Count);
+                foreach (var summary in bookedMachineSummaries)
+                {
+                    Console.Write("PRIMERA ITERACION");
+                    var rutinaReserva = new RutinaReserva
+                    {
+                        IdRutinaDiaEjercicio = summary.IdRutinaDiaEjercicio,
+                        IdReservaMaquina = summary.ReservationId,
+                        //IdReservaEspacio = null,
+                        //IdReservaEntrenador = null,
+                        FechaAgrupacion = DateTime.UtcNow,
+                        Notas = $"Part of routine day booking for Routine {request.RoutineId}, Day {request.DiaNumero}, User {request.UserId}"
+                    };
+                    _context.RutinaReservas.Add(rutinaReserva);
+                }
+            }
+
+            await _context.SaveChangesAsync();
             await transaction.CommitAsync();
+
             _logger.LogInformation("Successfully booked all machines for Routine {RoutineId}, Day {DiaNumero} for User {UserId}",
                 request.RoutineId, request.DiaNumero, request.UserId);
 
@@ -271,7 +303,7 @@ public class BookingService : IBookingService
                 UserId = request.UserId,
                 RoutineId = request.RoutineId,
                 DiaNumero = request.DiaNumero,
-                Message = "All machines for the routine day have been successfully booked.",
+                Message = "Todas las máquinas para la jornada de rutina han sido reservadas exitosamente.",
                 BookedMachines = bookedMachineSummaries
             }, null);
         }
@@ -524,7 +556,8 @@ public class BookingService : IBookingService
             await _context.SaveChangesAsync();
             _logger.LogInformation("Successfully cancelled machine reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
 
-            try {
+            try
+            {
                 var notification = new NotificationRequest
                 {
                     IdUsuario = reservation.IdUsuario,
@@ -533,8 +566,9 @@ public class BookingService : IBookingService
                     Descripcion = $"Tu reservación para la máquina '{machine?.Nombre}' el {reservation.FechaHoraInicio.ToLocalTime():D} a las {reservation.FechaHoraInicio.ToLocalTime():t} ha sido cancelada"
                 };
                 await _notificationService.SendNotificationAsync(notification);
-                }
-            catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 _logger.LogError(ex, "Failed to send confirmation notification for machine reservation {ReservationId}", reservation.IdReservaMaquina);
             }
 
@@ -542,7 +576,7 @@ public class BookingService : IBookingService
         }
         catch (DbUpdateConcurrencyException ex)
         {
-             _logger.LogError(ex, "Concurrency error cancelling machine reservation {ReservationId}", reservationId);
+            _logger.LogError(ex, "Concurrency error cancelling machine reservation {ReservationId}", reservationId);
             return CancellationResult.Conflict;
         }
         catch (Exception ex)
@@ -554,12 +588,12 @@ public class BookingService : IBookingService
 
     public async Task<CancellationResult> CancelTrainerReservationAsync(int reservationId, int requestingUserId, bool isAdmin)
     {
-         _logger.LogInformation("Attempting to cancel trainer reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
+        _logger.LogInformation("Attempting to cancel trainer reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
 
         var reservation = await _context.ReservasEntrenador
                                     .FirstOrDefaultAsync(r => r.IdReservaEntrenador == reservationId);
 
-         if (reservation == null)
+        if (reservation == null)
         {
             _logger.LogWarning("Trainer reservation {ReservationId} not found for cancellation attempt by user {UserId}", reservationId, requestingUserId);
             return CancellationResult.NotFound;
@@ -567,24 +601,24 @@ public class BookingService : IBookingService
 
         if (reservation.IdCliente != requestingUserId && reservation.IdEntrenador != requestingUserId && !isAdmin)
         {
-             _logger.LogWarning("User {UserId} forbidden to cancel trainer reservation {ReservationId} (Client: {ClientId}, Trainer: {TrainerId})",
-                requestingUserId, reservationId, reservation.IdCliente, reservation.IdEntrenador);
-             return CancellationResult.Forbidden;
+            _logger.LogWarning("User {UserId} forbidden to cancel trainer reservation {ReservationId} (Client: {ClientId}, Trainer: {TrainerId})",
+               requestingUserId, reservationId, reservation.IdCliente, reservation.IdEntrenador);
+            return CancellationResult.Forbidden;
         }
 
         // Business Rule Check:
         if (reservation.Estado == "Cancelada")
         {
             _logger.LogInformation("Trainer reservation {ReservationId} is already cancelled.", reservationId);
-             return CancellationResult.Success;
+            return CancellationResult.Success;
         }
         if (reservation.Estado == "Completada" || reservation.Estado == "NoShowCliente" || reservation.Estado == "NoShowEntrenador")
         {
-             _logger.LogWarning("Cannot cancel trainer reservation {ReservationId} because its status is {Status}", reservationId, reservation.Estado);
+            _logger.LogWarning("Cannot cancel trainer reservation {ReservationId} because its status is {Status}", reservationId, reservation.Estado);
             return CancellationResult.Conflict;
         }
 
-         // Perform Cancellation
+        // Perform Cancellation
         reservation.Estado = "Cancelada";
         reservation.AsistioCliente = null;
         reservation.AsistioEntrenador = null;
@@ -592,12 +626,12 @@ public class BookingService : IBookingService
         try
         {
             await _context.SaveChangesAsync();
-             _logger.LogInformation("Successfully cancelled trainer reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
+            _logger.LogInformation("Successfully cancelled trainer reservation {ReservationId} by user {UserId}", reservationId, requestingUserId);
             return CancellationResult.Success;
         }
         catch (DbUpdateConcurrencyException ex) // Handle potential race conditions
         {
-             _logger.LogError(ex, "Concurrency error cancelling trainer reservation {ReservationId}", reservationId);
+            _logger.LogError(ex, "Concurrency error cancelling trainer reservation {ReservationId}", reservationId);
             return CancellationResult.Conflict;
         }
         catch (Exception ex)
@@ -606,7 +640,7 @@ public class BookingService : IBookingService
             return CancellationResult.Conflict;
         }
     }
-    
+
     public async Task<CancellationResult> CancelClassRegistrationAsync(int registrationId, int requestingUserId, bool isAdmin)
     {
         _logger.LogInformation("Attempting to cancel class registration {RegistrationId} by user {UserId}", registrationId, requestingUserId);
@@ -630,8 +664,8 @@ public class BookingService : IBookingService
 
         // Business Rule Check:
         //preventing cancellation if class already started/finished
-        if (registration.Clase?.FechaHoraInicio <= DateTime.UtcNow) 
-        { 
+        if (registration.Clase?.FechaHoraInicio <= DateTime.UtcNow)
+        {
             return CancellationResult.Conflict;
         }
 
@@ -642,10 +676,10 @@ public class BookingService : IBookingService
             _logger.LogInformation("Successfully cancelled (removed) class registration {RegistrationId} by user {UserId}", registrationId, requestingUserId);
             return CancellationResult.Success;
         }
-         catch (DbUpdateConcurrencyException ex)
+        catch (DbUpdateConcurrencyException ex)
         {
-             _logger.LogError(ex, "Concurrency error cancelling class registration {RegistrationId}", registrationId);
-             return CancellationResult.NotFound; 
+            _logger.LogError(ex, "Concurrency error cancelling class registration {RegistrationId}", registrationId);
+            return CancellationResult.NotFound;
         }
         catch (Exception ex)
         {
@@ -670,8 +704,8 @@ public class BookingService : IBookingService
                 UserId = r.IdUsuario,
                 ItemId = r.IdMaquina,
                 ItemName = r.MaquinaEjercicio.Nombre,
-                StartTime = r.FechaHoraInicio,
-                EndTime = r.FechaHoraFin,
+                StartTime = r.FechaHoraInicio.ToUniversalTime(),
+                EndTime = r.FechaHoraFin.ToUniversalTime(),
                 Status = r.Estado,
                 Attended = r.Asistio
             })
@@ -771,9 +805,38 @@ public class BookingService : IBookingService
         return machineBookings.OrderBy(b => b.StartTime); // Return just machines for brevity here
     }
 
+    public async Task<(ExternalRutinaDiaEjercicioDto? RoutineDayExercise, string? ErrorMessage)> GetRoutineDayExerciseForMachineReservationAsync(int idReservaMaquina)
+    {
+        _logger.LogInformation("Fetching routine day exercise for machine reservation ID: {IdReservaMaquina}", idReservaMaquina);
 
-    // --- Attendance Update Methods ---
-    // These might be called by the background service or other triggers
+        var rutinaReservaLink = await _context.RutinaReservas
+            .AsNoTracking()
+            .FirstOrDefaultAsync(rr => rr.IdReservaMaquina == idReservaMaquina);
+
+        if (rutinaReservaLink == null)
+        {
+            _logger.LogWarning("No routine day exercise link found for machine reservation ID: {IdReservaMaquina}", idReservaMaquina);
+            return (null, "No routine day exercise is associated with this machine reservation.");
+        }
+
+        if (rutinaReservaLink.IdRutinaDiaEjercicio <= 0)
+        {
+            _logger.LogError("Invalid IdRutinaDiaEjercicio {IdRDE} found in RutinaReservas for machine reservation {IdReservaMaquina}",
+                rutinaReservaLink.IdRutinaDiaEjercicio, idReservaMaquina);
+            return (null, "Invalid routine day exercise association found.");
+        }
+
+        _logger.LogInformation("Found link. Fetching details for RutinaDiaEjercicio ID: {IdRDE} from RoutineEquipmentService.", rutinaReservaLink.IdRutinaDiaEjercicio);
+        var routineDayExerciseDetails = await _routineEquipmentClient.GetRutinaDiaEjercicioByIdAsync(rutinaReservaLink.IdRutinaDiaEjercicio);
+
+        if (routineDayExerciseDetails == null)
+        {
+            _logger.LogWarning("Could not retrieve details for RutinaDiaEjercicio ID: {IdRDE} from RoutineEquipmentService.", rutinaReservaLink.IdRutinaDiaEjercicio);
+            return (null, $"Could not retrieve details for the associated routine day exercise (ID: {rutinaReservaLink.IdRutinaDiaEjercicio}). It might have been deleted or the service is unavailable.");
+        }
+
+        return (routineDayExerciseDetails, null);
+    }
 
     public async Task UpdateMachineAttendanceAsync(int reservationId, bool attended)
     {

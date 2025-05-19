@@ -9,6 +9,7 @@ public class RoutineDayBookingSummary
     public int ReservationId { get; set; }
     public DateTime ReservedStartTime { get; set; }
     public DateTime ReservedEndTime { get; set; }
+    public int IdRutinaDiaEjercicio { get; set; }
 }
 
 public class RoutineDayBookingResponse

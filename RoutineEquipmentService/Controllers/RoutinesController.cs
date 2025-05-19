@@ -170,4 +170,18 @@ public class RoutinesController : ControllerBase
 
         return Ok(maquinas);
     }
+
+    // GET api/Routines/day-exercise/{idRutinaDiaEjercicio}
+    [HttpGet("day-exercise/{idRutinaDiaEjercicio:int}")]
+    [ProducesResponseType(typeof(RutinaDiaEjercicioResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RutinaDiaEjercicioResponse>> GetRutinaDiaEjercicioById(int idRutinaDiaEjercicio)
+    {
+        var result = await _routineService.GetRutinaDiaEjercicioByIdAsync(idRutinaDiaEjercicio);
+        if (result == null)
+        {
+            return NotFound($"RutinaDiaEjercicio with ID {idRutinaDiaEjercicio} not found.");
+        }
+        return Ok(result);
+    }
 }

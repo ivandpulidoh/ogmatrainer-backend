@@ -63,4 +63,27 @@ public class RoutineEquipmentHttpClientService : IRoutineEquipmentServiceClient
             return null;
         }
     }
+
+     public async Task<ExternalRutinaDiaEjercicioDto?> GetRutinaDiaEjercicioByIdAsync(int idRutinaDiaEjercicio)
+    {
+        var client = _httpClientFactory.CreateClient("RoutineEquipmentServiceClient");
+        // IMPORTANT: This path needs to match the new endpoint you will create in RoutineEquipmentService
+        string requestUrl = $"{_routineEquipmentServiceBaseUrl}/api/Routines/day-exercise/{idRutinaDiaEjercicio}";
+        _logger.LogInformation("Fetching RutinaDiaEjercicio {IdRutinaDiaEjercicio} from {Url}", idRutinaDiaEjercicio, requestUrl);
+
+        try
+        {
+            return await client.GetFromJsonAsync<ExternalRutinaDiaEjercicioDto>(requestUrl);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP error fetching RutinaDiaEjercicio {Id}. Status: {StatusCode}", idRutinaDiaEjercicio, ex.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching RutinaDiaEjercicio {Id}.", idRutinaDiaEjercicio);
+            return null;
+        }
+    }
 }
