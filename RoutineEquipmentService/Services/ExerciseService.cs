@@ -22,80 +22,102 @@ public class ExerciseService : IExerciseService
     }
 
     public async Task<(EjercicioResponse? Exercise, string? ErrorMessage)> CreateExerciseAsync(CreateEjercicioRequest request, int? creatorUserId)
+{
+    _logger.LogInformation("Creating new exercise: {ExerciseName} by User: {CreatorId} with requested machine IDs: {MachineIds}",
+        request.Nombre, creatorUserId ?? 0, request.MaquinasRequeridasIds != null ? string.Join(",", request.MaquinasRequeridasIds) : "None");
+
+    if (await _context.Ejercicios.AnyAsync(e => e.Nombre == request.Nombre))
     {
-        _logger.LogInformation("Creating new exercise: {ExerciseName} by User: {CreatorId}", request.Nombre, creatorUserId ?? 0);
+        _logger.LogWarning("Exercise with name {ExerciseName} already exists.", request.Nombre);
+        return (null, $"An exercise with the name '{request.Nombre}' already exists.");
+    }
+    
+    List<MaquinaEjercicio> machinesToLink = new List<MaquinaEjercicio>();
 
-        // Check for existing exercise with the same name (unique constraint)
-        if (await _context.Ejercicios.AnyAsync(e => e.Nombre == request.Nombre))
+    if (request.MaquinasRequeridasIds != null && request.MaquinasRequeridasIds.Any())
+    {
+        Console.WriteLine("SE ENCONTRO MAQUINAS REQUERIDAS");
+        var distinctRequestedMachineIds = request.MaquinasRequeridasIds.Distinct().ToList();
+        
+        machinesToLink = await _context.MaquinasEjercicio
+                                       .Where(m => distinctRequestedMachineIds.Contains(m.IdMaquina))
+                                       .ToListAsync();
+
+        var existingMachineIdsFromDb = machinesToLink.Select(m => m.IdMaquina).ToList();
+        Console.WriteLine($"MAQUINAS ENCONTRADAS EN DB IDS: {string.Join(", ", existingMachineIdsFromDb)}");
+
+        var missingMachineIds = distinctRequestedMachineIds.Except(existingMachineIdsFromDb).ToList();
+        if (missingMachineIds.Any())
         {
-            _logger.LogWarning("Exercise with name {ExerciseName} already exists.", request.Nombre);
-            return (null, $"An exercise with the name '{request.Nombre}' already exists.");
-        }
-
-        if (request.MaquinasRequeridasIds != null && request.MaquinasRequeridasIds.Any())
-        {
-            var distinctRequestedMachineIds = request.MaquinasRequeridasIds.Distinct().ToList();
-            var existingMachineIds = await _context.MaquinasEjercicio
-                                               .Where(m => distinctRequestedMachineIds.Contains(m.IdMaquina))
-                                               .Select(m => m.IdMaquina)
-                                               .ToListAsync();
-
-            var missingMachineIds = distinctRequestedMachineIds.Except(existingMachineIds).ToList();
-            if (missingMachineIds.Any())
-            {
-                _logger.LogWarning("Cannot create exercise. Invalid or non-existent machine IDs provided: {MissingIds}", string.Join(", ", missingMachineIds));
-                return (null, $"The following machine IDs are invalid or do not exist: {string.Join(", ", missingMachineIds)}");
-            }
-        }
-
-        var newExercise = new Ejercicio
-        {
-            Nombre = request.Nombre,
-            Descripcion = request.Descripcion,
-            MusculoObjetivo = request.MusculoObjetivo,
-            UrlVideoDemostracion = request.UrlVideoDemostracion,
-            IdCreador = creatorUserId
-        };
-
-        using var transaction = await _context.Database.BeginTransactionAsync();
-
-        try
-        {
-            _context.Ejercicios.Add(newExercise);
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("Exercise {ExerciseName} created successfully with ID {ExerciseId}.", newExercise.Nombre, newExercise.IdEjercicio);
-
-            if (request.MaquinasRequeridasIds != null && request.MaquinasRequeridasIds.Any())
-            {
-                foreach (var machineId in request.MaquinasRequeridasIds.Distinct())
-                {
-                    var ejercicioMaquina = new EjercicioMaquina
-                    {
-                        IdEjercicio = newExercise.IdEjercicio,
-                        IdMaquina = machineId
-                    };
-                    _context.EjercicioMaquinas.Add(ejercicioMaquina);
-                }
-                await _context.SaveChangesAsync();
-                _logger.LogInformation("Linked exercise ID {ExerciseId} to {Count} machines.", newExercise.IdEjercicio, request.MaquinasRequeridasIds.Distinct().Count());
-            }
-
-            await transaction.CommitAsync(); // Commit transaction if all successful
-
-            _logger.LogInformation("Exercise {ExerciseName} and machine links created successfully with ID {ExerciseId}.", newExercise.Nombre, newExercise.IdEjercicio);
-            return (MapToResponse(newExercise), null);
-        }
-        catch (DbUpdateException ex)
-        {
-            _logger.LogError(ex, "Database error creating exercise {ExerciseName}.", request.Nombre);
-            return (null, "Failed to create exercise due to a database error. Check for unique constraints.");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "General error creating exercise {ExerciseName}.", request.Nombre);
-            return (null, "An unexpected error occurred while creating the exercise.");
+            Console.WriteLine($"MAQUINAS INVALIDAS O FALTANTES: {string.Join(", ", missingMachineIds)}");
+            _logger.LogWarning("Cannot create exercise. Invalid or non-existent machine IDs provided: {MissingIds}", string.Join(", ", missingMachineIds));
+            return (null, $"The following machine IDs are invalid or do not exist: {string.Join(", ", missingMachineIds)}");
         }
     }
+
+    var newExercise = new Ejercicio
+    {
+        Nombre = request.Nombre,
+        Descripcion = request.Descripcion,
+        MusculoObjetivo = request.MusculoObjetivo,
+        UrlVideoDemostracion = request.UrlVideoDemostracion,
+        IdCreador = creatorUserId
+        // MaquinasRequeridas navigation property will be populated below for the response
+    };
+
+    using var transaction = await _context.Database.BeginTransactionAsync();
+
+    try
+    {
+        _context.Ejercicios.Add(newExercise);
+        await _context.SaveChangesAsync(); // Save exercise first to get its ID
+        _logger.LogInformation("Exercise '{ExerciseName}' base entity created with ID {ExerciseId}.", newExercise.Nombre, newExercise.IdEjercicio);
+
+        // LINK EXERCISE TO VALIDATED MACHINES
+        if (machinesToLink.Any()) // Check the list of validated MaquinaEjercicio entities
+        {
+            foreach (var machineToLink in machinesToLink)
+            {
+                var ejercicioMaquina = new EjercicioMaquina
+                {
+                    IdEjercicio = newExercise.IdEjercicio, // Use the ID of the newly created exercise
+                    IdMaquina = machineToLink.IdMaquina    // Use the ID from the validated machine entity
+                };
+                _context.EjercicioMaquinas.Add(ejercicioMaquina);
+            }
+            await _context.SaveChangesAsync(); // Save the links
+            _logger.LogInformation("Linked exercise ID {ExerciseId} to {Count} machines.", newExercise.IdEjercicio, machinesToLink.Count);
+
+            // Populate the navigation property on the newExercise object for the MapToResponse method
+            // This is for the immediate response. A fresh GetById would also load these.
+            newExercise.MaquinasRequeridas = machinesToLink
+                .Select(m => new EjercicioMaquina {
+                    IdEjercicio = newExercise.IdEjercicio,
+                    IdMaquina = m.IdMaquina,
+                    MaquinaEjercicio = m // Assign the actual machine entity
+                }).ToList();
+        }
+
+        await transaction.CommitAsync(); // Commit transaction if all successful
+
+        _logger.LogInformation("Exercise '{ExerciseName}' and machine links created successfully with ID {ExerciseId}.", newExercise.Nombre, newExercise.IdEjercicio);
+        
+        // MapToResponse will now have access to newExercise.MaquinasRequeridas (if it uses it)
+        return (MapToResponse(newExercise), null);
+    }
+    catch (DbUpdateException ex)
+    {
+        await transaction.RollbackAsync(); // Ensure rollback on DB error
+        _logger.LogError(ex, "Database error creating exercise '{ExerciseName}' or its machine links.", request.Nombre);
+        return (null, "Failed to create exercise due to a database error. Check for unique constraints or invalid foreign keys.");
+    }
+    catch (Exception ex)
+    {
+        await transaction.RollbackAsync(); // Ensure rollback on any other error
+        _logger.LogError(ex, "General error creating exercise '{ExerciseName}'.", request.Nombre);
+        return (null, "An unexpected error occurred while creating the exercise.");
+    }
+}
 
     public async Task<EjercicioResponse?> GetExerciseByIdAsync(int exerciseId)
     {

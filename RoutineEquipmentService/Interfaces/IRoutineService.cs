@@ -1,4 +1,5 @@
 using RoutineEquipmentService.Dtos;
+using RoutineEquipmentService.Models;
 namespace RoutineEquipmentService.Interfaces;
 
 public interface IRoutineService
@@ -10,4 +11,8 @@ public interface IRoutineService
     Task<(bool Success, string? ErrorMessage)> DeleteRoutineAsync(int rutinaId, int deleterUserId);
     Task<(IEnumerable<MaquinaResponse>? Maquinas, string? ErrorMessage)> GetMaquinasForRutinaAsync(int rutinaId);
     Task<RutinaDiaEjercicioResponse?> GetRutinaDiaEjercicioByIdAsync(int idRutinaDiaEjercicio);
+    Task<(AssignedRutinaResponse? AssignedRutina, string? ErrorMessage)> AssignRutinaToUserAsync(AssignRutinaRequest request, int idEntrenadorAsignador);
+    Task<IEnumerable<AssignedRutinaResponse>> GetRutinasForUserAsync(int idUsuario);
+    Task<IEnumerable<AssignedRutinaResponse>> GetRutinasAssignedByTrainerAsync(int idUsuario, int idEntrenadorAsignador);
+    Task<(bool Success, string? ErrorMessage)> SetRutinaActiveStateAsync(int idUsuarioRutina, bool activa, int requestingUserId);
 }

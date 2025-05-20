@@ -5,6 +5,8 @@ using RoutineEquipmentService.Dtos;
 using System.Security.Claims;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using RoutineEquipmentService.Models;
+using System.ComponentModel.DataAnnotations;
 
 namespace RoutineEquipmentService.Controllers;
 
@@ -184,4 +186,88 @@ public class RoutinesController : ControllerBase
         }
         return Ok(result);
     }
+
+    // POST api/routines/assign
+    [HttpPost("assign")]
+    [ProducesResponseType(typeof(AssignedRutinaResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> AssignRutinaToUser([FromBody] AssignRutinaRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }      
+
+        var (assignedRutina, errorMessage) = await _routineService.AssignRutinaToUserAsync(request, request.IdEntrenadorAsignador);
+
+        if (assignedRutina != null)
+        {           
+            return CreatedAtAction(nameof(GetRutinasForUser), new { idUsuario = assignedRutina.IdUsuario }, assignedRutina);        
+        }
+
+        if (errorMessage != null && errorMessage.Contains("not found"))
+        {
+            return NotFound(new ProblemDetails { Title = "Not Found", Detail = errorMessage, Status = StatusCodes.Status404NotFound });
+        }
+        return BadRequest(new ProblemDetails { Title = "Assignment Failed", Detail = errorMessage });
+    }
+
+    // GET api/routines/user/{idUsuario}
+    [HttpGet("user/{idUsuario:int}")]
+    [ProducesResponseType(typeof(IEnumerable<AssignedRutinaResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetRutinasForUser(int idUsuario)
+    {               
+        var routines = await _routineService.GetRutinasForUserAsync(idUsuario);
+        return Ok(routines);
+    }
+
+    // GET api/routines/assigned-by-trainer/{idEntrenadorAsignador}
+    [HttpGet("user/{idUsuario:int}/assigned-by-trainer/{idEntrenadorAsignador:int}")]
+    [ProducesResponseType(typeof(IEnumerable<AssignedRutinaResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)] 
+    public async Task<IActionResult> GetRoutinesAssignedByTrainer(int idUsuario, int idEntrenadorAsignador)
+    {    
+        var routines = await _routineService.GetRutinasAssignedByTrainerAsync(idUsuario,idEntrenadorAsignador);
+        return Ok(routines);
+    }
+
+    // PATCH api/routines/assignments/{idUsuarioRutina}/set-active
+    [HttpPatch("assignments/{idUsuarioRutina:int}/set-active")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> SetRutinaActiveState(int idUsuarioRutina, [FromQuery, Required] bool activa)
+    {
+        int requestingUserId;
+        try
+        {
+            requestingUserId = GetRequiredCurrentUserId();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new ProblemDetails { Title = "Unauthorized", Detail = ex.Message, Status = StatusCodes.Status401Unauthorized });
+        }
+
+        var (success, errorMessage) = await _routineService.SetRutinaActiveStateAsync(idUsuarioRutina, activa, requestingUserId);
+
+        if (success)
+        {
+            return NoContent();
+        }
+        if (errorMessage != null)
+        {
+            if (errorMessage.Contains("not found"))
+                return NotFound(new ProblemDetails { Title = "Not Found", Detail = errorMessage });
+            if (errorMessage.Contains("not authorized"))
+                return Forbid();
+        }
+        return BadRequest(new ProblemDetails { Title = "Operation Failed", Detail = errorMessage });
+    }
+
 }

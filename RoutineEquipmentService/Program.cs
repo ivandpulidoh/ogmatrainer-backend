@@ -27,9 +27,13 @@ builder.Services.AddDbContext<RoutineEquipmentDbContext>(options =>
     options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
 
-builder.Services.AddHttpClient("ExternalQrClient"); // Register a client for the QR service
+builder.Services.AddHttpClient("ExternalQrClient");
+builder.Services.AddHttpClient("GeminiApiClient", client =>
+{    
+    client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+});
 
-
+builder.Services.AddScoped<IAiRoutineGeneratorService, GeminiAiRoutineGeneratorService>();
 builder.Services.AddScoped<IEspacioService, EspacioService>();
 builder.Services.AddScoped<IExternalQrCodeService, ExternalQrCodeHttpService>();
 builder.Services.AddScoped<IEquipmentService, EquipmentService>();

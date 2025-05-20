@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RoutineEquipmentService.Entities;
 using RoutineEquipmentService.Models;
 
 namespace RoutineEquipmentService.Data;
@@ -14,12 +15,13 @@ public class RoutineEquipmentDbContext : DbContext
     public DbSet<MaquinaEjercicio> MaquinasEjercicio { get; set; } = null!;
     public DbSet<Clase> Clases { get; set; } = null!;
     public DbSet<EjercicioMaquina> EjercicioMaquinas { get; set; } = null!;
+    public DbSet<UsuarioRutina> UsuarioRutinas { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-    
+
         modelBuilder.Entity<RutinaDiaEjercicio>()
             .HasIndex(rde => new { rde.IdRutina, rde.DiaNumero, rde.OrdenEnDia })
             .IsUnique()
@@ -54,6 +56,12 @@ public class RoutineEquipmentDbContext : DbContext
             .WithOne(m => m.EspacioDeportivo)
             .HasForeignKey(m => m.IdEspacio)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<UsuarioRutina>()
+            .HasOne(ur => ur.Rutina)
+            .WithMany()
+            .HasForeignKey(ur => ur.IdRutina)
+            .OnDelete(DeleteBehavior.ClientSetNull);
 
     }
 }

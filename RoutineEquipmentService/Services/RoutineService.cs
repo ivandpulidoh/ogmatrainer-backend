@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using RoutineEquipmentService.Data;
 using RoutineEquipmentService.Dtos;
+using RoutineEquipmentService.Entities;
 using RoutineEquipmentService.Interfaces;
 using RoutineEquipmentService.Models;
 using System;
@@ -314,6 +315,139 @@ public class RoutineService : IRoutineService
             DescansoSegundos = rde.DescansoSegundos,
             NotasEjercicio = rde.NotasEjercicio            
         };
+    }
+
+     public async Task<(AssignedRutinaResponse? AssignedRutina, string? ErrorMessage)> AssignRutinaToUserAsync(
+        AssignRutinaRequest request, int idEntrenadorAsignador)
+    {
+        _logger.LogInformation("Assigning Rutina {RutinaId} to User {UserId} by Asignador {AsignadorId}",
+            request.IdRutina, request.IdUsuario, idEntrenadorAsignador);
+        
+        var rutina = await _context.Rutinas.FindAsync(request.IdRutina);
+        if (rutina == null)
+        {
+            _logger.LogWarning("Rutina with ID {RutinaId} not found for assignment.", request.IdRutina);
+            return (null, $"Rutina with ID {request.IdRutina} not found.");
+        }       
+        
+        var newAssignment = new UsuarioRutina
+        {
+            IdUsuario = request.IdUsuario,
+            IdRutina = request.IdRutina,
+            IdEntrenadorAsignador = idEntrenadorAsignador,
+            FechaAsignacion = DateTime.UtcNow,
+            Activa = true 
+        };
+
+        try
+        {
+            _context.UsuarioRutinas.Add(newAssignment);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Rutina {RutinaId} assigned successfully to User {UserId} with assignment ID {AssignmentId}",
+                request.IdRutina, request.IdUsuario, newAssignment.IdUsuarioRutina);
+            
+            var routineDetails = await GetRoutineByIdAsync(newAssignment.IdRutina);
+
+            return (new AssignedRutinaResponse
+            {
+                IdUsuarioRutina = newAssignment.IdUsuarioRutina,
+                IdUsuario = newAssignment.IdUsuario,
+                IdEntrenadorAsignador = newAssignment.IdEntrenadorAsignador,
+                FechaAsignacion = newAssignment.FechaAsignacion,
+                Activa = newAssignment.Activa,
+                RutinaDetalles = routineDetails
+            }, null);
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogError(ex, "Database error assigning Rutina {RutinaId} to User {UserId}.", request.IdRutina, request.IdUsuario);            
+            return (null, "Failed to assign routine due to a database error.");
+        }
+    }
+
+    
+    public async Task<IEnumerable<AssignedRutinaResponse>> GetRutinasForUserAsync(int idUsuario)
+    {
+        _logger.LogInformation("Fetching routines assigned to User {UserId}", idUsuario);
+
+        var assignedRutinas = await _context.UsuarioRutinas
+            .AsNoTracking()
+            .Where(ur => ur.IdUsuario == idUsuario)
+            .Include(ur => ur.Rutina)
+                .ThenInclude(r => r!.DiasEjercicios)
+                    .ThenInclude(de => de.Ejercicio)
+            .OrderByDescending(ur => ur.Activa)
+            .ThenByDescending(ur => ur.FechaAsignacion)
+            .ToListAsync();
+
+        var responseList = new List<AssignedRutinaResponse>();
+        foreach (var assignment in assignedRutinas)
+        {
+            responseList.Add(new AssignedRutinaResponse
+            {
+                IdUsuarioRutina = assignment.IdUsuarioRutina,
+                IdUsuario = assignment.IdUsuario,
+                IdEntrenadorAsignador = assignment.IdEntrenadorAsignador,
+                FechaAsignacion = assignment.FechaAsignacion,
+                Activa = assignment.Activa,
+                RutinaDetalles = assignment.Rutina != null ? MapToResponse(assignment.Rutina) : null // Use existing MapToResponse
+            });
+        }
+        return responseList;
+    }
+
+    public async Task<IEnumerable<AssignedRutinaResponse>> GetRutinasAssignedByTrainerAsync( int idUsuario, int idEntrenadorAsignador)
+    {
+        _logger.LogInformation("Fetching routines assigned by Trainer/Asignador ID: {IdEntrenadorAsignador}", idEntrenadorAsignador);
+
+    
+        var assignedRutinas = await _context.UsuarioRutinas
+            .AsNoTracking()
+            .Where(ur => ur.IdUsuario == idUsuario && ur.IdEntrenadorAsignador == idEntrenadorAsignador)
+            .Include(ur => ur.Rutina) 
+                .ThenInclude(r => r!.DiasEjercicios)
+                    .ThenInclude(de => de.Ejercicio) 
+            .OrderByDescending(ur => ur.FechaAsignacion)
+            .ToListAsync();
+
+        var responseList = new List<AssignedRutinaResponse>();
+        foreach (var assignment in assignedRutinas)
+        {
+            responseList.Add(new AssignedRutinaResponse
+            {
+                IdUsuarioRutina = assignment.IdUsuarioRutina,
+                IdUsuario = assignment.IdUsuario,
+                IdEntrenadorAsignador = assignment.IdEntrenadorAsignador,
+                FechaAsignacion = assignment.FechaAsignacion,
+                Activa = assignment.Activa,
+                RutinaDetalles = assignment.Rutina != null ? MapToResponse(assignment.Rutina) : null
+            });
+        }
+        return responseList;
+    }
+
+    public async Task<(bool Success, string? ErrorMessage)> SetRutinaActiveStateAsync(int idUsuarioRutina, bool activa, int requestingUserId)
+    {
+        _logger.LogInformation("Setting active state for UsuarioRutina ID {IdUsuarioRutina} to {IsActive} by User {RequestingUserId}",
+            idUsuarioRutina, activa, requestingUserId);
+
+        var assignment = await _context.UsuarioRutinas.FindAsync(idUsuarioRutina);
+        if (assignment == null)
+        {
+            return (false, "Assigned routine not found.");
+        }
+
+        try
+        {
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Active state for UsuarioRutina ID {IdUsuarioRutina} set to {IsActive}", idUsuarioRutina, activa);
+            return (true, null);
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogError(ex, "Database error setting active state for UsuarioRutina ID {IdUsuarioRutina}", idUsuarioRutina);
+            return (false, "Database error occurred.");
+        }
     }
 
     private static RutinaResponse MapToResponse(Rutina rutina)
