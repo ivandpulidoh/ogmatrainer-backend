@@ -26,6 +26,7 @@ CREATE TABLE Gimnasios (
     activo BIT DEFAULT 1, -- To easily deactivate a gym listing (1 = TRUE)
     codigo_qr_entrada VARBINARY(MAX),
     codigo_qr_salida VARBINARY(MAX),
+	fomulario_obligatorio bit NULL,
     CONSTRAINT UQ_Gimnasios_nombre UNIQUE (nombre)
 );
 GO
@@ -143,6 +144,7 @@ CREATE TABLE MaquinasEjercicio (
     estado VARCHAR(20) DEFAULT 'Disponible' NOT NULL, -- RF11, RF18 (Max length 'EnMantenimiento')
     reservable BIT DEFAULT 1, -- 1 = TRUE
     codigo_qr VARBINARY(MAX),
+	url_imagen VARCHAR(255) NULL,
     CONSTRAINT FK_MaquinasEjercicio_Espacio FOREIGN KEY (id_espacio) REFERENCES EspaciosDeportivos(id_espacio) ON DELETE CASCADE,
     CONSTRAINT CK_MaquinasEjercicio_estado CHECK (estado IN ('Disponible', 'EnMantenimiento', 'Averiada', 'Desactivada'))
     -- Consider adding UNIQUE constraint on nombre within a gym if needed (requires joining EspaciosDeportivos to get id_gimnasio)
@@ -307,26 +309,45 @@ CREATE TABLE Rutinas (
     nivel VARCHAR(15), -- Assuming DYNAMIC meant ENUM (Max length 'Principiante')
     objetivo NVARCHAR(100), -- e.g., Fuerza, Hipertrofia, Resistencia
     fecha_creacion DATETIME DEFAULT GETDATE(),
+	numero_dias INT NULL,
+	url_imagen VARCHAR(255) NULL,
     CONSTRAINT FK_Rutinas_Entrenador FOREIGN KEY (id_entrenador_creador) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE,
     CONSTRAINT CK_Rutinas_nivel CHECK (nivel IN ('Principiante', 'Intermedio', 'Avanzado'))
     -- Constraint: id_entrenador_creador must have Trainer role (App Logic or Trigger)
 );
 GO
 
--- RF09: Exercises within a Routine
-CREATE TABLE RutinaEjercicios (
-    id_rutina_ejercicio INT PRIMARY KEY IDENTITY(1,1),
-    id_rutina INT NOT NULL,
-    id_ejercicio INT NOT NULL,
-    orden INT NOT NULL, -- Order of exercise in the routine
-    series VARCHAR(20), -- e.g., 3, 4, 5x5
-    repeticiones VARCHAR(20), -- e.g., 8-12, 15, AMRAP
-    descanso_segundos INT, -- Rest time in seconds
-    notas_ejercicio NVARCHAR(MAX),
-    CONSTRAINT FK_RutinaEjercicios_Rutina FOREIGN KEY (id_rutina) REFERENCES Rutinas(id_rutina) ON DELETE CASCADE,
-    CONSTRAINT FK_RutinaEjercicios_Ejercicio FOREIGN KEY (id_ejercicio) REFERENCES Ejercicios(id_ejercicio) ON DELETE CASCADE,
-    CONSTRAINT UK_rutina_ejercicio_orden UNIQUE (id_rutina, id_ejercicio, orden)
+ALTER TABLE dbo.Rutinas
+ADD CONSTRAINT DF_Rutinas_numero_dias DEFAULT 1 FOR numero_dias; -- Optional: Default to 1 day if desired
+GO
+
+CREATE TABLE dbo.RutinaDiaEjercicios (
+    id_rutina_dia_ejercicio INT PRIMARY KEY IDENTITY(1,1), -- Unique ID for this specific entry
+    id_rutina INT NOT NULL,                           -- Foreign Key to the Routine
+    dia_numero INT NOT NULL CHECK (dia_numero > 0),     -- The day number within the routine (e.g., 1, 2, 3)
+    id_ejercicio INT NOT NULL,                        -- Foreign Key to the Exercise
+    orden_en_dia INT NOT NULL CHECK (orden_en_dia > 0), -- Order of the exercise within this specific day
+    series VARCHAR(20) NULL,                          -- e.g., '3', '4', '5x5'
+    repeticiones VARCHAR(200) NULL,                    -- e.g., '8-12', '15', 'AMRAP'
+    descanso_segundos INT NULL CHECK (descanso_segundos >= 0), -- Rest time in seconds
+    notas_ejercicio NVARCHAR(MAX) NULL,               -- Specific notes for this exercise on this day
+
+    -- Constraints
+    CONSTRAINT FK_RutinaDiaEjercicios_Rutina FOREIGN KEY (id_rutina)
+        REFERENCES dbo.Rutinas(id_rutina)
+        ON DELETE CASCADE, -- If the routine is deleted, remove its day exercises
+
+    CONSTRAINT FK_RutinaDiaEjercicios_Ejercicio FOREIGN KEY (id_ejercicio)
+        REFERENCES dbo.Ejercicios(id_ejercicio)
+        ON DELETE CASCADE, -- If the exercise is deleted, remove it from routines
+
+    -- Ensure that within a specific routine and day, the order is unique
+    CONSTRAINT UK_RutinaDia_Orden UNIQUE (id_rutina, dia_numero, orden_en_dia)
 );
+GO
+
+CREATE INDEX IX_RutinaDiaEjercicios_RutinaDia
+ON dbo.RutinaDiaEjercicios (id_rutina, dia_numero);
 GO
 
 -- RF09: Assigning Routines to Users
@@ -374,7 +395,8 @@ CREATE TABLE Clases (
     fecha_hora_inicio DATETIME, -- Required for live classes
     duracion_minutos INT,
     capacidad_maxima INT NULL, -- For live classes with limited spots
-    activa BIT DEFAULT 1, -- 1 = TRUE
+    activa BIT DEFAULT 1,
+	url_imagen VARCHAR(255) NULL,
     CONSTRAINT FK_Clases_Gimnasio FOREIGN KEY (id_gimnasio) REFERENCES Gimnasios(id_gimnasio) ON DELETE CASCADE,
     CONSTRAINT FK_Clases_Entrenador FOREIGN KEY (id_entrenador) REFERENCES Usuarios(id_usuario) ON DELETE SET NULL,
     CONSTRAINT CK_Clases_tipo CHECK (tipo IN ('EnVivo', 'Grabada'))
@@ -400,14 +422,23 @@ GO
 -- Define different types of memberships available
 CREATE TABLE TiposMembresia (
     id_tipo_membresia INT PRIMARY KEY IDENTITY(1,1),
+    id_gimnasio INT NULL, -- NUEVO: Clave foránea opcional al gimnasio específico
     nombre NVARCHAR(100) NOT NULL,
     descripcion NVARCHAR(MAX),
     duracion_meses INT NOT NULL, -- Or could be days/weeks
     precio DECIMAL(10, 2) NOT NULL,
-    activo BIT DEFAULT 1, -- Can this type be purchased? (1 = TRUE)
-    CONSTRAINT UQ_TiposMembresia_nombre UNIQUE (nombre)
+    activo BIT DEFAULT 1, -- Can this type be purchased? (1 = TRUE)    
+
+    CONSTRAINT FK_TiposMembresia_Gimnasio FOREIGN KEY (id_gimnasio)
+        REFERENCES Gimnasios(id_gimnasio)
+        ON DELETE SET NULL -- O NO ACTION, dependiendo de la regla de negocio
+        ON UPDATE CASCADE
 );
-GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[dbo].[TiposMembresia]') AND name = N'IX_TiposMembresia_id_gimnasio')
+BEGIN
+    CREATE INDEX IX_TiposMembresia_id_gimnasio ON TiposMembresia(id_gimnasio) WHERE id_gimnasio IS NOT NULL;
+END
 
 -- RF12: User Memberships
 CREATE TABLE Membresias (
@@ -496,5 +527,58 @@ CREATE TABLE Notificaciones (
     nombre NVARCHAR(255) NOT NULL, -- Título o nombre de la notificación
     descripcion NVARCHAR(MAX), -- Descripción detallada
     CONSTRAINT FK_Notificaciones_Usuario FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE
+);
+GO
+
+CREATE TABLE EjercicioMaquinas (
+    id_ejercicio INT NOT NULL,
+    id_maquina INT NOT NULL,
+
+    -- Notas adicionales opcionales para esta relación específica
+    notas NVARCHAR(255) NULL, -- Por ejemplo: "Ajuste específico requerido", "Alternativa principal"
+
+    CONSTRAINT PK_EjercicioMaquinas PRIMARY KEY (id_ejercicio, id_maquina),
+
+    CONSTRAINT FK_EjercicioMaquinas_Ejercicio FOREIGN KEY (id_ejercicio)
+        REFERENCES Ejercicios(id_ejercicio)
+        ON DELETE CASCADE, -- Si se borra un ejercicio, se borran sus relaciones con máquinas
+
+    CONSTRAINT FK_EjercicioMaquinas_Maquina FOREIGN KEY (id_maquina)
+        REFERENCES MaquinasEjercicio(id_maquina)
+        ON DELETE CASCADE -- Si se borra una máquina, se borran sus relaciones con ejercicios
+);
+GO
+
+
+CREATE TABLE RutinaReservas (
+    id_rutina_reserva INT PRIMARY KEY IDENTITY(1,1), -- Clave primaria para esta tabla de unión
+    id_rutina_dia_ejercicio INT NOT NULL,            -- Clave foránea a la tabla RutinaDiaEjercicios
+
+    -- Claves foráneas opcionales a los diferentes tipos de reservas
+    id_reserva_espacio INT NULL,
+    id_reserva_maquina INT NULL,
+    id_reserva_entrenador INT NULL,
+
+    fecha_agrupacion DATETIME DEFAULT GETDATE(),     -- Fecha en que se hizo la vinculación
+    notas NVARCHAR(MAX) NULL,                        -- Notas adicionales sobre esta vinculación específica
+
+    -- Restricción de Clave Foránea para id_rutina_dia_ejercicio
+    CONSTRAINT FK_RutinaReservas_RutinaDiaEjercicio FOREIGN KEY (id_rutina_dia_ejercicio)
+        REFERENCES RutinaDiaEjercicios(id_rutina_dia_ejercicio)
+        ON DELETE CASCADE, -- Si se elimina el ejercicio del día de la rutina, se eliminan sus vinculaciones de reservas.
+
+    -- Restricciones de Clave Foránea para los IDs de reserva
+    CONSTRAINT FK_RutinaReservas_ReservaEspacio FOREIGN KEY (id_reserva_espacio)
+        REFERENCES ReservasEspacios(id_reserva_espacio)
+        ON DELETE NO ACTION, -- Para evitar ciclos o cascadas múltiples
+
+    CONSTRAINT FK_RutinaReservas_ReservaMaquina FOREIGN KEY (id_reserva_maquina)
+        REFERENCES ReservasMaquinas(id_reserva_maquina)
+        ON DELETE NO ACTION, -- Para evitar ciclos o cascadas múltiples
+
+    CONSTRAINT FK_RutinaReservas_ReservaEntrenador FOREIGN KEY (id_reserva_entrenador)
+        REFERENCES ReservasEntrenador(id_reserva_entrenador)
+        ON DELETE NO ACTION, -- Para evitar ciclos o cascadas múltiples
+  
 );
 GO
